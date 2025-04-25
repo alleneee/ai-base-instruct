@@ -1,0 +1,66 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 项目结构总览
+
+本项目是一个企业级知识库平台，基于FastAPI、LlamaIndex、Pydantic v2和Milvus构建，以下是项目的整体结构。
+
+## 目录结构
+
+- **enterprise_kb/**: 主项目目录
+  - **api/**: API层，包含所有路由和端点
+    - **dependencies/**: 依赖注入和中间件
+    - **endpoints/**: API端点和路由器
+    - **middlewares/**: API中间件
+  - **config/**: 配置模块，包含应用设置
+  - **core/**: 核心功能实现
+    - **config/**: 核心配置
+    - **middleware/**: 核心中间件
+  - **db/**: 数据库相关组件
+    - **models/**: 数据库模型
+    - **repositories/**: 数据访问仓库
+  - **models/**: 应用模型和实体
+  - **schemas/**: Pydantic模型和验证器
+  - **scripts/**: 实用脚本和工具
+  - **services/**: 业务逻辑服务
+  - **storage/**: 文件存储和管理
+  - **tests/**: 单元测试和集成测试
+  - **utils/**: 通用工具和辅助函数
+- **migrations/**: 数据库迁移脚本
+  - **versions/**: Alembic版本迁移文件
+- **.cursor/**: Cursor编辑器规则
+  - **rules/**: 项目导航和理解规则
+- **alembic.ini**: Alembic配置文件
+- **pyproject.toml**: 项目依赖和构建配置
+- **requirements.txt**: 项目依赖列表
+
+## 架构层次
+
+项目采用分层架构设计:
+
+1. **表示层**: API路由和端点
+2. **业务层**: 服务和业务逻辑
+3. **数据访问层**: 仓库和数据模型
+4. **基础设施层**: 配置、工具和核心功能
+
+## 技术栈
+
+- **Web框架**: FastAPI
+- **ORM**: SQLAlchemy
+- **数据验证**: Pydantic v2
+- **向量数据库**: Milvus
+- **文本处理**: LlamaIndex
+- **认证**: FastAPI-Users + JWT
+- **缓存**: Redis + FastAPI-Cache
+- **任务队列**: Celery
+- **数据库**: PostgreSQL
+- **迁移工具**: Alembic
+
+## 开发指南
+
+- 遵循PEP 8风格指南
+- 使用类型注解提高代码可读性
+- 实现单元测试和文档
+- 使用依赖注入实现松耦合

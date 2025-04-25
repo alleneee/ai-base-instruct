@@ -1,0 +1,51 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 数据库结构指南
+
+本项目使用PostgreSQL作为关系型数据库，并使用SQLAlchemy ORM进行数据操作，以下是相关的关键文件和概念。
+
+## 关键文件
+
+- **数据库配置**: [enterprise_kb/db/config.py](mdc:enterprise_kb/db/config.py)
+  - 配置数据库连接参数
+  - 创建Session和Engine
+  - 管理数据库连接池
+
+- **数据模型**: [enterprise_kb/db/models](mdc:enterprise_kb/db/models)
+  - 定义SQLAlchemy ORM模型
+  - 实现表结构和关系
+  - 配置默认值和约束
+
+- **数据仓库**: [enterprise_kb/db/repositories](mdc:enterprise_kb/db/repositories)
+  - 实现数据访问逻辑
+  - 封装复杂查询
+  - 提供CRUD操作接口
+
+- **迁移脚本**: [migrations/versions](mdc:migrations/versions)
+  - 包含Alembic生成的数据库迁移脚本
+  - 记录模式变更历史
+
+## 数据模型设计
+
+- **用户模型**: 存储用户信息和认证数据
+- **文档模型**: 存储文档元数据
+- **文档块模型**: 存储文档分块信息
+- **向量索引模型**: 管理向量集合元数据
+
+## 数据库迁移
+
+项目使用Alembic进行数据库迁移管理:
+
+- 通过`alembic revision --autogenerate`生成迁移脚本
+- 通过`alembic upgrade head`应用迁移到数据库
+- 通过`alembic downgrade`回滚迁移
+
+## 最佳实践
+
+- 使用依赖注入模式注入数据库会话
+- 实现单元测试时使用事务回滚
+- 使用类型注解提高代码可读性
+- 通过仓库模式隔离数据访问逻辑

@@ -1,0 +1,46 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 缓存系统指南
+
+本项目使用Redis实现缓存功能，通过fastapi-cache集成到FastAPI应用中，以下是相关的关键文件和概念。
+
+## 关键文件
+
+- **缓存配置**: [enterprise_kb/core/cache.py](mdc:enterprise_kb/core/cache.py)
+  - 配置Redis连接
+  - 设置缓存键生成策略
+  - 定义缓存过期时间
+
+- **缓存中间件**: [enterprise_kb/core/middleware/cache.py](mdc:enterprise_kb/core/middleware/cache.py)
+  - 实现请求级缓存
+  - 处理缓存键生成和验证
+  - 配置缓存响应头
+
+- **缓存服务**: [enterprise_kb/services/cache_service.py](mdc:enterprise_kb/services/cache_service.py)
+  - 提供高级缓存操作接口
+  - 实现缓存预热和失效策略
+  - 管理缓存命名空间
+
+## 缓存策略
+
+项目实现了多层次的缓存策略:
+
+1. **请求级缓存**: 缓存整个API响应以减少重复计算
+2. **对象级缓存**: 缓存复杂对象以减少数据库查询
+3. **计算结果缓存**: 缓存昂贵计算操作的结果
+
+## 缓存控制
+
+- **TTL (Time-To-Live)**: 不同类型数据设置不同的过期时间
+- **缓存标签**: 使用标签组织和批量失效相关缓存
+- **缓存依赖**: 跟踪缓存项之间的依赖关系
+
+## 最佳实践
+
+- 使用`CacheControl`响应头控制客户端缓存
+- 实现缓存命中率监控
+- 使用适当的序列化策略处理复杂对象
+- 在写操作后主动使相关缓存失效

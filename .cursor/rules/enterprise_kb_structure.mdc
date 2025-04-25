@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 企业知识库平台架构指南
+
+本项目是一个基于LlamaIndex、FastAPI、Pydantic v2和Milvus构建的企业级知识库平台。
+
+## 项目结构
+
+- **配置模块**: [enterprise_kb/config/settings.py](mdc:enterprise_kb/config/settings.py) 包含应用的核心配置信息
+- **核心功能**:
+  - [enterprise_kb/core/vector_store.py](mdc:enterprise_kb/core/vector_store.py) 实现LlamaIndex与Milvus的集成
+  - [enterprise_kb/core/document_processor.py](mdc:enterprise_kb/core/document_processor.py) 负责文档处理管道
+  - [enterprise_kb/core/retrieval_engine.py](mdc:enterprise_kb/core/retrieval_engine.py) 实现知识检索引擎
+- **数据模型**: [enterprise_kb/models/schemas.py](mdc:enterprise_kb/models/schemas.py) 定义Pydantic数据模型
+- **服务层**:
+  - [enterprise_kb/services/document_service.py](mdc:enterprise_kb/services/document_service.py) 文档管理服务
+  - [enterprise_kb/services/search_service.py](mdc:enterprise_kb/services/search_service.py) 搜索服务
+- **API层**:
+  - [enterprise_kb/api/document_routes.py](mdc:enterprise_kb/api/document_routes.py) 文档管理API
+  - [enterprise_kb/api/search_routes.py](mdc:enterprise_kb/api/search_routes.py) 搜索API
+  - [enterprise_kb/api/api.py](mdc:enterprise_kb/api/api.py) FastAPI主应用
+- **实用工具**: [enterprise_kb/utils/milvus_client.py](mdc:enterprise_kb/utils/milvus_client.py) Milvus客户端
+- **入口点**: [enterprise_kb/main.py](mdc:enterprise_kb/main.py) 应用启动入口
+
+## 架构流程
+
+1. **文档处理流程**:
+   - 文档上传通过API路由接收
+   - DocumentService调用DocumentProcessor处理文档
+   - 文档被加载、分割和转换为向量
+   - 向量存储在Milvus中
+
+2. **检索流程**:
+   - 查询通过API路由接收
+   - SearchService调用RetrievalEngine执行检索
+   - 检索引擎使用向量相似度搜索找到相关文档片段
+   - 结果返回给用户
+
+## 关键组件
+
+- **MilvusVectorStore**: 实现了LlamaIndex的VectorStore接口，与Milvus集成
+- **DocumentProcessor**: 负责加载、处理和向量化文档
+- **RetrievalEngine**: 提供高效的语义检索功能
+- **FastAPI应用**: 提供RESTful API服务

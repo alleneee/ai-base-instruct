@@ -1,0 +1,52 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 用户认证与授权指南
+
+本项目使用FastAPI-Users实现用户管理、认证和授权功能，以下是相关的关键文件和概念。
+
+## 关键文件
+
+- **用户模型**: [enterprise_kb/db/models/user.py](mdc:enterprise_kb/db/models/user.py)
+  - 定义用户数据模型
+  - 包含身份验证所需字段
+  - 实现角色和权限
+
+- **用户管理**: [enterprise_kb/services/user_service.py](mdc:enterprise_kb/services/user_service.py)
+  - 实现用户管理逻辑
+  - 提供用户CRUD操作
+  - 处理用户注册和密码重置
+
+- **认证系统**: [enterprise_kb/core/auth.py](mdc:enterprise_kb/core/auth.py)
+  - 配置JWT认证
+  - 设置令牌过期时间
+  - 定义认证后端
+
+- **用户路由**: [enterprise_kb/api/user_routes.py](mdc:enterprise_kb/api/user_routes.py)
+  - 提供用户管理API端点
+  - 实现登录和注销功能
+  - 处理密码重置请求
+
+## 认证流程
+
+1. **注册**: 用户提供电子邮件和密码创建账户
+2. **登录**: 用户提交凭据并接收JWT令牌
+3. **验证**: API端点通过JWT令牌验证用户身份
+4. **刷新**: 使用刷新令牌获取新的访问令牌
+
+## 授权机制
+
+本系统实现基于角色的访问控制(RBAC):
+
+- **角色**: 定义用户组和权限集合
+- **权限**: 细粒度的操作授权
+- **依赖项**: FastAPI依赖项检查用户角色和权限
+
+## 最佳实践
+
+- 使用密码哈希保护用户凭据
+- 实现令牌黑名单以支持注销功能
+- 使用HTTPS保护API通信
+- 实现适当的访问控制检查

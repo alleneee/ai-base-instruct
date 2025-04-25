@@ -1,0 +1,44 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Milvus向量存储指南
+
+本项目使用Milvus作为向量数据库，以下是相关的关键文件和概念。
+
+## 关键文件
+
+- **Milvus客户端**: [enterprise_kb/utils/milvus_client.py](mdc:enterprise_kb/utils/milvus_client.py) 
+  - 提供与Milvus服务器的低级连接
+  - 管理集合、字段和索引
+  - 实现向量的插入、查询和删除
+
+- **LlamaIndex集成**: [enterprise_kb/core/vector_store.py](mdc:enterprise_kb/core/vector_store.py)
+  - 实现LlamaIndex的VectorStore接口
+  - 将LlamaIndex节点转换为Milvus格式
+  - 处理查询过滤和相似度计算
+
+## 集合架构
+
+Milvus集合包含以下字段:
+
+- `id`: 主键 (INT64, 自动生成)
+- `doc_id`: 文档ID (VARCHAR)
+- `chunk_id`: 文档块ID (VARCHAR)
+- `text`: 文本内容 (VARCHAR)
+- `metadata`: 元数据 (JSON)
+- `vector`: 嵌入向量 (FLOAT_VECTOR, 维度为1536)
+
+## 使用模式
+
+1. **初始化**: 配置连接参数并创建集合
+2. **索引**: 设置向量索引类型(HNSW)和相似度度量(COSINE)
+3. **插入**: 将文档块转换为向量并插入Milvus
+4. **查询**: 基于向量相似度和过滤条件进行检索
+
+## 最佳实践
+
+- 使用单例模式确保只有一个客户端实例
+- 适当设置向量维度以匹配嵌入模型
+- 利用Milvus的过滤功能进行精确检索

@@ -1,0 +1,50 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 文档处理指南
+
+本项目实现了一个完整的文档处理管道，从上传到索引存储。以下是相关的关键文件和概念。
+
+## 关键文件
+
+- **文档处理器**: [enterprise_kb/core/document_processor.py](mdc:enterprise_kb/core/document_processor.py)
+  - 负责加载和处理不同格式的文档
+  - 实现文档分块和向量化
+  - 将处理后的文档节点存储到向量数据库
+
+- **文档服务**: [enterprise_kb/services/document_service.py](mdc:enterprise_kb/services/document_service.py)
+  - 管理文档的元数据
+  - 协调文档的上传、处理和删除
+  - 提供文档列表查询功能
+
+- **文档路由**: [enterprise_kb/api/document_routes.py](mdc:enterprise_kb/api/document_routes.py)
+  - 定义文档管理的API端点
+  - 处理文件上传和表单数据
+  - 与文档服务交互
+
+## 文档处理流程
+
+1. **上传**: 通过API接收文件并保存到临时位置
+2. **加载**: 根据文件类型使用相应的读取器加载文档
+3. **分块**: 将文档分割成适合向量化的小块
+4. **向量化**: 使用嵌入模型将文本块转换为向量
+5. **存储**: 将向量和元数据存储到Milvus数据库
+6. **索引**: 更新元数据和索引信息
+
+## 支持的文档类型
+
+以下是当前支持的文档格式:
+
+- PDF (.pdf) - 使用PyMuPDFReader
+- Word (.docx, .doc) - 使用DocxReader和UnstructuredReader
+- 文本 (.txt, .md) - 使用UnstructuredReader
+- PowerPoint (.ppt, .pptx) - 使用UnstructuredReader
+- Excel (.xlsx, .xls, .csv) - 使用UnstructuredReader
+
+## 最佳实践
+
+- 调整分块大小和重叠参数以获得最佳语义理解
+- 使用元数据字段存储额外的文档信息
+- 确保为不同类型的文档设置适当的处理器

@@ -1,0 +1,48 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 检索引擎指南
+
+本项目实现了基于向量相似度的语义检索引擎，以下是相关的关键文件和概念。
+
+## 关键文件
+
+- **检索引擎**: [enterprise_kb/core/retrieval_engine.py](mdc:enterprise_kb/core/retrieval_engine.py)
+  - 提供核心检索功能
+  - 使用LlamaIndex的VectorIndexRetriever
+  - 实现相似度过滤和结果格式化
+
+- **搜索服务**: [enterprise_kb/services/search_service.py](mdc:enterprise_kb/services/search_service.py)
+  - 封装检索引擎的功能
+  - 处理搜索请求参数
+  - 格式化检索结果为API响应
+
+- **搜索路由**: [enterprise_kb/api/search_routes.py](mdc:enterprise_kb/api/search_routes.py)
+  - 定义搜索API端点
+  - 处理搜索请求参数验证
+  - 调用搜索服务执行检索
+
+## 检索过程
+
+1. **查询处理**: 接收用户查询
+2. **向量化**: 使用嵌入模型将查询转换为向量
+3. **向量检索**: 在向量空间中找到与查询向量最相似的文档块
+4. **相似度过滤**: 过滤掉相似度低于阈值的结果
+5. **结果格式化**: 将检索结果转换为API响应格式
+
+## 查询参数
+
+检索引擎支持以下查询参数:
+
+- `query`: 查询文本
+- `top_k`: 返回的最大结果数量
+- `filters`: 基于元数据的过滤条件
+- `min_score`: 最小相似度阈值
+
+## 最佳实践
+
+- 调整相似度阈值以平衡召回率和精度
+- 使用元数据过滤缩小搜索范围
+- 根据查询需求选择合适的top_k值
