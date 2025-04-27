@@ -134,6 +134,10 @@ class Settings(BaseSettings):
     PARALLEL_PROCESSING_ENABLED: bool = Field(default=True)
     PARALLEL_MAX_WORKERS: int = Field(default=None)  # None表示使用CPU核心数
     PARALLEL_CHUNK_SIZE: int = Field(default=100000)  # 并行处理的块大小（字符数）
+    PARALLEL_CHUNK_STRATEGY: str = Field(default="sentence")  # 分块策略：fixed_size, sentence, paragraph, semantic
+    PARALLEL_USE_DISTRIBUTED: bool = Field(default=False)  # 是否使用分布式处理(Celery)
+    PARALLEL_MEMORY_EFFICIENT: bool = Field(default=False)  # 是否使用内存高效模式
+    PARALLEL_BATCH_SIZE: int = Field(default=10)  # 批处理大小，用于内存优化
 
     # 语义分块配置
     SEMANTIC_CHUNKING_ENABLED: bool = Field(default=True)
