@@ -9,7 +9,7 @@ from datetime import datetime
 from celery import chord, group, chain
 from celery.result import GroupResult
 
-from enterprise_kb.core.celery.app import celery_app
+from enterprise_kb.core.unified_celery import celery_app
 from enterprise_kb.core.celery.task_manager import tracked_task, get_task_manager
 from enterprise_kb.storage.document_processor import get_document_processor
 from enterprise_kb.core.parallel_processor import get_parallel_processor

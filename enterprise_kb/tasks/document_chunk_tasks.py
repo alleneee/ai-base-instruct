@@ -4,7 +4,7 @@ from typing import Dict, List, Any, Optional
 
 from llama_index.core.schema import TextNode, BaseNode
 
-from enterprise_kb.core.celery.app import celery_app
+from enterprise_kb.core.unified_celery import celery_app
 from enterprise_kb.core.celery.task_manager import tracked_task
 
 logger = logging.getLogger(__name__)

@@ -5,7 +5,7 @@ import traceback
 
 from celery.utils.log import get_task_logger
 
-from enterprise_kb.core.celery_app import app
+from enterprise_kb.core.unified_celery import celery_app as app
 from enterprise_kb.utils.logging import get_logger
 from enterprise_kb.services.index.manager import IndexManager
 from enterprise_kb.db.repositories.document import DocumentRepository
@@ -18,7 +18,7 @@ logger = get_task_logger(__name__)
 service_logger = get_logger(__name__)
 
 
-@app.task(
+@celery_app.task(
     name="index.index_document",
     queue="indexing",
     bind=True,
@@ -98,7 +98,7 @@ def index_document(
         }
 
 
-@app.task(
+@celery_app.task(
     name="index.reindex_collection",
     queue="indexing",
     bind=True,
@@ -173,7 +173,7 @@ def reindex_collection(
         }
 
 
-@app.task(
+@celery_app.task(
     name="index.batch_index_documents",
     queue="indexing",
     bind=True,
@@ -267,7 +267,7 @@ def batch_index_documents(
         }
 
 
-@app.task(
+@celery_app.task(
     name="index.delete_document_from_index",
     queue="indexing",
     bind=True,

@@ -10,7 +10,7 @@ from celery import group, chain, chord
 from celery.result import AsyncResult, GroupResult
 from celery.exceptions import TimeoutError, TaskRevokedError
 
-from enterprise_kb.core.celery.app import celery_app
+from enterprise_kb.core.unified_celery import celery_app
 from enterprise_kb.core.config.settings import settings
 
 logger = logging.getLogger(__name__)

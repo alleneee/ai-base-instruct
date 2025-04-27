@@ -4,7 +4,7 @@ import json
 import os
 from typing import Dict, Any, Optional, List, Union
 
-from enterprise_kb.core.celery.app import celery_app
+from enterprise_kb.core.unified_celery import celery_app
 from enterprise_kb.storage.document_processor import get_document_processor
 from enterprise_kb.models.schemas import DocumentStatus
 from enterprise_kb.db.repositories.document_repository import DocumentRepository
@@ -222,7 +222,7 @@ def cleanup_task(self, file_paths: List[str], keep_original: bool = False) -> Di
     logger.info(f"清理完成: 删除 {results['deleted']}, 失败 {results['failed']}, 跳过 {results['skipped']}")
     return results
 
-@shared_task(name="process_document")
+@celery_app.task(name="process_document")
 def process_document_task(
     doc_id: str, 
     file_path: str, 

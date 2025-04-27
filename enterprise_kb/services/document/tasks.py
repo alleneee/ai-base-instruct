@@ -10,7 +10,7 @@ import traceback
 
 from celery.utils.log import get_task_logger
 
-from enterprise_kb.core.celery_app import app
+from enterprise_kb.core.unified_celery import celery_app as app
 from enterprise_kb.core.config.settings import settings
 from enterprise_kb.services.document.processors import (
     PDFProcessor,
@@ -49,7 +49,7 @@ PROCESSOR_MAP = {
 }
 
 
-@app.task(
+@celery_app.task(
     name="document.process_document",
     queue="processing",
     bind=True,
@@ -158,7 +158,7 @@ def process_document(
         }
 
 
-@app.task(
+@celery_app.task(
     name="document.process_collection",
     queue="documents",
 )
@@ -228,7 +228,7 @@ def process_collection(
     }
 
 
-@app.task(
+@celery_app.task(
     name="document.batch_process_documents",
     queue="processing",
     bind=True,
@@ -313,7 +313,7 @@ def batch_process_documents(
         }
 
 
-@app.task(
+@celery_app.task(
     bind=True,
     name="document.delete_document",
     queue="documents",
@@ -363,7 +363,7 @@ def delete_document(
         return {"success": False, "error": str(e)}
 
 
-@app.task(name="enterprise_kb.services.document.tasks.add_to_index")
+@celery_app.task(name="enterprise_kb.services.document.tasks.add_to_index")
 def add_to_index(document_id: int) -> Dict[str, Any]:
     """
     将处理后的文档添加到索引
@@ -434,7 +434,7 @@ def add_to_index(document_id: int) -> Dict[str, Any]:
         return {"success": False, "error": error_msg}
 
 
-@app.task(name="enterprise_kb.services.document.tasks.bulk_process_documents")
+@celery_app.task(name="enterprise_kb.services.document.tasks.bulk_process_documents")
 def bulk_process_documents(document_ids: List[int]) -> Dict[str, Any]:
     """
     批量处理多个文档
@@ -460,7 +460,7 @@ def bulk_process_documents(document_ids: List[int]) -> Dict[str, Any]:
     }
 
 
-@app.task(name="enterprise_kb.services.document.tasks.scheduled_index_optimize")
+@celery_app.task(name="enterprise_kb.services.document.tasks.scheduled_index_optimize")
 def scheduled_index_optimize() -> Dict[str, Any]:
     """
     定时优化索引任务
@@ -528,7 +528,7 @@ def save_processed_document(
     return processed_path
 
 
-@app.task(
+@celery_app.task(
     name="document.purge_document",
     queue="processing",
     bind=True,

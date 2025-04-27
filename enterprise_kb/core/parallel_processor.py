@@ -20,7 +20,7 @@ from llama_index.core import Document
 from llama_index.core.schema import BaseNode, TextNode
 
 from enterprise_kb.core.config.settings import settings
-from enterprise_kb.core.celery.app import celery_app
+from enterprise_kb.core.unified_celery import celery_app
 
 logger = logging.getLogger(__name__)
 
