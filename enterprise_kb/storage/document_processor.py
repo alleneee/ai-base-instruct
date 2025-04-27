@@ -16,6 +16,8 @@ from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser, H
 from llama_index.readers.file import PyMuPDFReader, DocxReader, UnstructuredReader
 from llama_index.embeddings.openai import OpenAIEmbedding
 from markitdown import MarkItDown
+from llama_index.core.callbacks import CallbackManager, TokenCountingHandler
+import tiktoken
 
 from enterprise_kb.core.config.settings import settings
 from enterprise_kb.storage.vector_store import get_storage_context
@@ -639,7 +641,17 @@ class DocumentProcessor:
     
     def __init__(self):
         """初始化文档处理器"""
-        # 设置LlamaIndex全局配置
+        # 创建令牌计数器
+        if settings.TOKEN_COUNTING_ENABLED:
+            token_counter = TokenCountingHandler(
+                tokenizer=tiktoken.encoding_for_model(settings.TOKEN_COUNTER_MODEL).encode,
+                verbose=settings.TOKEN_COUNTING_VERBOSE
+            )
+            
+            # 设置全局配置
+            Settings.callback_manager = CallbackManager([token_counter])
+        
+        # 设置嵌入模型和分块配置
         Settings.embed_model = OpenAIEmbedding()
         Settings.chunk_size = settings.LLAMA_INDEX_CHUNK_SIZE
         Settings.chunk_overlap = settings.LLAMA_INDEX_CHUNK_OVERLAP
@@ -831,25 +843,40 @@ class DocumentProcessor:
         # 其他情况默认转换为Markdown
         return True
     
-    def process_document(
-        self, 
-        file_path: str, 
-        metadata: Optional[Dict[str, Any]] = None,
-        convert_to_md: Optional[bool] = None,
-        strategy: Optional[Dict[str, Any]] = None
+    async def process_document(
+        self,
+        file_path: str,
+        metadata: Dict[str, Any],
+        datasource_name: Optional[str] = "primary",
+        use_parallel: Optional[bool] = None,
+        use_semantic_chunking: Optional[bool] = None,
+        use_incremental: Optional[bool] = None,
+        chunking_type: Optional[str] = None
     ) -> Dict[str, Any]:
-        """处理文档并索引到向量存储
-        
+        """处理文档并索引到向量库
+
         Args:
-            file_path: 文件路径
-            metadata: 元数据
-            convert_to_md: 是否转换为Markdown（如果为None则自动决定）
-            strategy: 处理策略（如果为None则自动分析）
-            
+            file_path: 文档路径
+            metadata: 文档元数据
+            datasource_name: 数据源名称
+            use_parallel: 是否使用并行处理，如果为None则使用配置中的默认值
+            use_semantic_chunking: 是否使用语义分块，如果为None则使用配置中的默认值
+            use_incremental: 是否使用增量更新，如果为None则使用配置中的默认值
+            chunking_type: 分块类型，如果为None则使用配置中的默认值
+
         Returns:
             处理结果
         """
         try:
+            # 重置令牌计数器
+            token_counter = None
+            if settings.TOKEN_COUNTING_ENABLED and Settings.callback_manager and Settings.callback_manager.handlers:
+                for handler in Settings.callback_manager.handlers:
+                    if isinstance(handler, TokenCountingHandler):
+                        token_counter = handler
+                        token_counter.reset_counts()
+                        break
+
             # 准备元数据
             if metadata is None:
                 metadata = {}
@@ -872,12 +899,11 @@ class DocumentProcessor:
             metadata = {**base_metadata, **metadata}
             
             # 如果没有提供策略，则自动确定
-            if not strategy:
-                strategy = self.determine_processing_strategy(file_path)
-                metadata["processing_strategy"] = strategy
+            strategy = self.determine_processing_strategy(file_path)
+            metadata["processing_strategy"] = strategy
             
             # 确定是否转换为Markdown
-            should_convert = convert_to_md if convert_to_md is not None else strategy["should_convert_to_markdown"]
+            should_convert = strategy["should_convert_to_markdown"]
             
             # 将文档转换为Markdown格式（如果需要）
             processing_path = file_path
@@ -912,6 +938,21 @@ class DocumentProcessor:
                 vector_store=self.storage_context.vector_store
             )
             nodes = ingestion_pipeline.run(documents=documents)
+            
+            # 处理完成后可以记录令牌使用情况
+            token_usage = {}
+            if token_counter:
+                token_usage = {
+                    "embedding_tokens": token_counter.total_embedding_token_count,
+                    "llm_prompt_tokens": token_counter.prompt_llm_token_count,
+                    "llm_completion_tokens": token_counter.completion_llm_token_count,
+                    "total_llm_tokens": token_counter.total_llm_token_count
+                }
+                logger.info(f"文档处理令牌使用情况: {token_usage}")
+            
+            # 添加令牌使用信息到元数据
+            if token_usage:
+                metadata["token_usage"] = token_usage
             
             # 返回处理结果
             result = {

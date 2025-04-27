@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     MILVUS_DIMENSION: int = 1536  # 默认嵌入向量维度
 
     # Milvus新配置
-    MILVUS_URI: str = os.getenv("MILVUS_URI", "http://localhost:19530")
+    MILVUS_URI: str = f"http://{MILVUS_HOST}:{MILVUS_PORT}"
     MILVUS_USER: str = os.getenv("MILVUS_USER", "")
     MILVUS_PASSWORD: str = os.getenv("MILVUS_PASSWORD", "")
     MILVUS_TEXT_FIELD: str = os.getenv("MILVUS_TEXT_FIELD", "text")
@@ -156,6 +156,15 @@ class Settings(BaseSettings):
 
     # 项目名称
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "enterprise-kb")
+
+    # 令牌计数设置
+    TOKEN_COUNTING_ENABLED: bool = os.getenv("TOKEN_COUNTING_ENABLED", "True").lower() in ("true", "1", "yes")
+    TOKEN_COUNTING_VERBOSE: bool = os.getenv("TOKEN_COUNTING_VERBOSE", "False").lower() in ("true", "1", "yes")
+    TOKEN_COUNTER_MODEL: str = os.getenv("TOKEN_COUNTER_MODEL", "gpt-3.5-turbo")
+
+    # Milvus索引管理设置
+    MILVUS_INDEX_MANAGEMENT: str = os.getenv("MILVUS_INDEX_MANAGEMENT", "CREATE_IF_NOT_EXISTS")  # 可选：NO_VALIDATION, CREATE_IF_NOT_EXISTS
+    MILVUS_OVERWRITE: bool = os.getenv("MILVUS_OVERWRITE", "False").lower() in ("true", "1", "yes")
 
     @validator("BACKEND_CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:

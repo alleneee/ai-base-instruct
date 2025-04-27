@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Type, ClassVar
 from pydantic import Field
 
 from llama_index.core.schema import TextNode, NodeWithScore, BaseNode
-from llama_index.vector_stores.milvus import MilvusVectorStore
+from llama_index.vector_stores.milvus import MilvusVectorStore, IndexManagement
 
 from enterprise_kb.storage.datasource.base import DataSource, DataSourceConfig
 from enterprise_kb.storage.datasource.registry import register_datasource
@@ -52,41 +52,31 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
     def _initialize(self) -> None:
         """初始化Milvus客户端"""
         try:
-            # 延迟导入pymilvus
-            from pymilvus import MilvusClient
+            # 初始化Milvus向量存储
+            uri = self.config.uri
             
-            # 创建连接
-            connection_args = {
-                "uri": self.config.uri,
-                "user": self.config.user,
-                "password": self.config.password, 
-                "token": ""  # 使用用户名密码认证时不需要token
-            }
-            
-            self._client = MilvusClient(**connection_args)
-            
-            # 初始化向量存储
+            # 确定索引管理策略
+            index_management_str = settings.MILVUS_INDEX_MANAGEMENT
+            index_management = IndexManagement.CREATE_IF_NOT_EXISTS
+            if index_management_str == "NO_VALIDATION":
+                index_management = IndexManagement.NO_VALIDATION
+            # 创建向量存储实例
             self.vector_store = MilvusVectorStore(
-                milvus_client=self._client,
+                uri=uri,
                 collection_name=self.config.collection_name,
                 dim=self.config.dimension,
                 text_field=self.config.text_field,
                 embedding_field=self.config.embedding_field,
                 metadata_field=self.config.metadata_field,
                 id_field=self.config.id_field,
+                index_management=index_management,
+                overwrite=settings.MILVUS_OVERWRITE
             )
             
-            # 获取集合引用
-            if self._client.has_collection(self.config.collection_name):
-                self.collection = self._client.get_collection(self.config.collection_name)
-            
-            logger.info(f"成功初始化Milvus客户端连接: {self.config.uri}")
+            logger.info(f"成功初始化Milvus向量存储: {uri}")
         except Exception as e:
-            logger.error(f"初始化Milvus客户端失败: {str(e)}")
-            self._client = None
-            self.vector_store = None
-            self.collection = None
-            raise
+            logger.error(f"初始化Milvus数据源失败: {str(e)}")
+            raise ValueError(f"初始化Milvus数据源失败: {str(e)}")
     
     async def connect(self) -> None:
         """连接到Milvus服务器"""

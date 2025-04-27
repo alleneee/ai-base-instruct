@@ -14,6 +14,9 @@ llama-index-vector-stores-milvus>=0.1.0
 llama-index-embeddings-openai>=0.1.0
 llama-index-llms-openai>=0.1.0
 llama-index-readers-file>=0.1.3
+llama-index-question-gen-openai>=0.1.0
+llama-index-agent-openai>=0.1.0
+llama-index-callbacks-langfuse>=0.1.0
 
 # 文档处理
 unstructured>=0.10.0
@@ -37,3 +40,6 @@ markitdown[all]
 celery>=5.3.1
 redis>=4.6.0
 flower>=2.0.1
+
+# 令牌计数
+tiktoken>=0.5.0

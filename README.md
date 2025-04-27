@@ -21,16 +21,29 @@
 - **插件式文档处理管道**：支持可扩展的文档处理器，可以灵活添加和配置不同的处理步骤
 - **统一数据访问层**：使用SQLAlchemy实现对文档元数据的一致性管理
 - **请求性能优化**：通过异步处理和缓存机制提升API响应速度
+- **令牌使用跟踪**：使用TokenCountingHandler跟踪嵌入和LLM令牌使用情况
+- **改进的Milvus集成**：使用LlamaIndex官方Milvus集成，支持索引管理策略配置
 
 ## 技术栈
 
 - **后端框架**：FastAPI
 - **数据验证**：Pydantic v2
 - **向量数据库**：Milvus
-- **知识检索**：LlamaIndex
+- **知识检索**：LlamaIndex (模块化版本)
 - **文档处理**：MarkItDown, Unstructured, PyMuPDF等
 - **异步任务**：Celery + Redis
 - **数据库**：PostgreSQL + SQLAlchemy
+- **令牌计数**：tiktoken
+
+### LlamaIndex模块化依赖
+
+本项目使用LlamaIndex的最新模块化依赖结构：
+
+- **llama-index-core**：核心功能
+- **llama-index-vector-stores-milvus**：Milvus集成
+- **llama-index-embeddings-openai**：OpenAI嵌入模型
+- **llama-index-llms-openai**：OpenAI语言模型
+- **llama-index-readers-file**：文件加载器
 
 ## 系统架构
 
