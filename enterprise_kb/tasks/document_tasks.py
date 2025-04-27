@@ -6,6 +6,8 @@ from typing import Dict, Any, Optional, List, Union
 
 from enterprise_kb.core.celery.app import celery_app
 from enterprise_kb.storage.document_processor import get_document_processor
+from enterprise_kb.models.schemas import DocumentStatus
+from enterprise_kb.db.repositories.document_repository import DocumentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -218,4 +220,66 @@ def cleanup_task(self, file_paths: List[str], keep_original: bool = False) -> Di
             results["failed"] += 1
     
     logger.info(f"清理完成: 删除 {results['deleted']}, 失败 {results['failed']}, 跳过 {results['skipped']}")
-    return results 
+    return results
+
+@shared_task(name="process_document")
+def process_document_task(
+    doc_id: str, 
+    file_path: str, 
+    metadata: Dict[str, Any],
+    datasource_name: Optional[str] = None,
+    custom_processors: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    异步处理文档任务
+    
+    Args:
+        doc_id: 文档ID
+        file_path: 文件路径
+        metadata: 文档元数据
+        datasource_name: 数据源名称
+        custom_processors: 自定义处理器列表
+        
+    Returns:
+        处理结果
+    """
+    try:
+        # 更新文档状态为处理中
+        doc_repo = DocumentRepository()
+        doc_repo.update_status(doc_id, DocumentStatus.PROCESSING)
+        
+        # 获取处理器并处理文档
+        processor = get_document_processor()
+        result = processor.process_document(
+            file_path=file_path,
+            metadata=metadata,
+            datasource_name=datasource_name,
+            custom_processors=custom_processors
+        )
+        
+        # 更新文档状态为完成
+        doc_repo.update(
+            doc_id,
+            {
+                "status": DocumentStatus.COMPLETED,
+                "node_count": result["node_count"],
+                "datasource": result.get("datasource", "primary")
+            }
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"文档处理失败: {str(e)}")
+        
+        # 更新文档状态为失败
+        doc_repo = DocumentRepository()
+        doc_repo.update(
+            doc_id,
+            {
+                "status": DocumentStatus.FAILED,
+                "error": str(e)
+            }
+        )
+        
+        # 重新抛出异常，确保Celery可以记录任务失败
+        raise 

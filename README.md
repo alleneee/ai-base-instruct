@@ -12,6 +12,16 @@
 - **语义检索**：基于LlamaIndex实现高精度语义检索
 - **RESTful API**：提供完整的REST API，便于集成到现有系统
 
+## 系统优化
+
+项目包含以下主要优化：
+
+- **异步文档处理**：使用Celery实现文档处理的异步任务，提高系统响应性能
+- **依赖注入模式**：通过FastAPI的依赖注入系统实现服务和仓库层的松耦合架构
+- **插件式文档处理管道**：支持可扩展的文档处理器，可以灵活添加和配置不同的处理步骤
+- **统一数据访问层**：使用SQLAlchemy实现对文档元数据的一致性管理
+- **请求性能优化**：通过异步处理和缓存机制提升API响应速度
+
 ## 技术栈
 
 - **后端框架**：FastAPI
@@ -19,6 +29,8 @@
 - **向量数据库**：Milvus
 - **知识检索**：LlamaIndex
 - **文档处理**：MarkItDown, Unstructured, PyMuPDF等
+- **异步任务**：Celery + Redis
+- **数据库**：PostgreSQL + SQLAlchemy
 
 ## 系统架构
 
@@ -34,8 +46,10 @@
 
 ### 环境要求
 
-- Python 3.9+
+- Python 3.12+
+- PostgreSQL 14+
 - Milvus 2.3+
+- Redis 7.0+
 - OpenAI API Key (用于嵌入模型)
 
 ### 安装
@@ -61,15 +75,21 @@ pip install -r requirements.txt
 cp environment.env.example .env
 ```
 
-编辑`.env`文件，设置Milvus和OpenAI API密钥等配置。
+编辑`.env`文件，设置数据库、Milvus和OpenAI API密钥等配置。
 
-4. 启动应用
+4. 初始化数据库
 
 ```bash
-python -m enterprise_kb.main
+alembic upgrade head
 ```
 
-应用将在`http://localhost:8000`上运行，API文档可通过`http://localhost:8000/docs`访问。
+5. 启动应用
+
+```bash
+uvicorn enterprise_kb.main:app --reload
+```
+
+应用将在`http://localhost:8000`上运行，API文档可通过`http://localhost:8000/api/docs`访问。
 
 ## API接口
 
@@ -152,15 +172,57 @@ response = requests.post(
 
 ### Docker部署
 
-提供Docker部署指南（待完善）。
+1. 构建Docker镜像
+
+```bash
+docker build -t enterprise-kb .
+```
+
+2. 使用Docker Compose启动服务
+
+```bash
+docker-compose up -d
+```
 
 ### 生产环境部署
 
-生产环境部署建议（待完善）。
+生产环境部署建议：
+
+1. 使用Nginx作为反向代理
+2. 将Celery任务队列与Web服务分离
+3. 配置适当的监控和日志收集
+4. 设置数据库和向量库的备份策略
 
 ## 开发指南
 
-开发环境设置和扩展指南（待完善）。
+### 本地开发环境设置
+
+1. 创建并激活Python虚拟环境
+2. 安装开发依赖: `pip install -r requirements-dev.txt`
+3. 安装pre-commit钩子: `pre-commit install`
+4. 运行测试: `pytest tests/`
+
+### 添加新的文档处理器
+
+要添加新的文档处理器，请执行以下步骤：
+
+1. 在`enterprise_kb/core/document_pipeline/processors.py`中创建新的处理器类
+2. 继承`DocumentProcessor`基类并实现`process`方法
+3. 使用`@PipelineFactory.register_processor`装饰器注册处理器
+
+示例：
+
+```python
+@PipelineFactory.register_processor
+class MyNewProcessor(DocumentProcessor):
+    """我的新处理器"""
+    
+    SUPPORTED_TYPES = ['pdf', 'docx']
+    
+    def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # 实现处理逻辑
+        return context
+```
 
 ## 许可证
 

@@ -11,6 +11,8 @@ from enterprise_kb.models.schemas import (
     DocumentStatus, DocumentMetadata, DocumentList
 )
 from enterprise_kb.core.document_processor import get_document_processor
+from enterprise_kb.db.repositories.document_repository import DocumentRepository
+from enterprise_kb.tasks.document_tasks import process_document_task
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +23,20 @@ os.makedirs(METADATA_DIR, exist_ok=True)
 class DocumentService:
     """文档服务，管理文档元数据和处理文档"""
     
-    def __init__(self):
-        """初始化文档服务"""
+    def __init__(self, document_repository: DocumentRepository):
+        """
+        初始化文档服务
+        
+        Args:
+            document_repository: 文档仓库
+        """
+        self.doc_repo = document_repository
         self.processor = None
         
-    async def _get_processor(self):
+    def _get_processor(self):
         """获取文档处理器实例"""
         if self.processor is None:
-            self.processor = await get_document_processor()
+            self.processor = get_document_processor()
         return self.processor
         
     def _get_metadata_path(self, doc_id: str) -> str:
@@ -50,23 +58,31 @@ class DocumentService:
         with open(metadata_path, "r", encoding="utf-8") as f:
             return json.load(f)
     
-    def _to_document_response(self, metadata: Dict[str, Any]) -> DocumentResponse:
-        """将元数据转换为文档响应对象"""
-        doc_metadata = DocumentMetadata(**metadata.get("metadata", {}))
+    def _to_document_response(self, document: Dict[str, Any]) -> DocumentResponse:
+        """
+        将文档数据转换为响应对象
+        
+        Args:
+            document: 文档数据
+            
+        Returns:
+            文档响应对象
+        """
+        doc_metadata = DocumentMetadata(**document.get("metadata", {}))
         
         return DocumentResponse(
-            doc_id=metadata.get("doc_id"),
-            file_name=metadata.get("file_name"),
-            title=metadata.get("title"),
-            description=metadata.get("description"),
-            file_type=metadata.get("file_type"),
-            status=metadata.get("status", DocumentStatus.COMPLETED),
-            created_at=metadata.get("created_at"),
-            updated_at=metadata.get("updated_at"),
+            doc_id=document.get("doc_id") or document.get("id"),
+            file_name=document.get("file_name"),
+            title=document.get("title"),
+            description=document.get("description"),
+            file_type=document.get("file_type"),
+            status=document.get("status", DocumentStatus.COMPLETED),
+            created_at=document.get("created_at"),
+            updated_at=document.get("updated_at"),
             metadata=doc_metadata,
-            node_count=metadata.get("node_count"),
-            size_bytes=metadata.get("size_bytes"),
-            datasource=metadata.get("datasource", "primary")
+            node_count=document.get("node_count"),
+            size_bytes=document.get("size_bytes"),
+            datasource=document.get("datasource", "primary")
         )
     
     async def create_document(
@@ -74,7 +90,8 @@ class DocumentService:
         file: BinaryIO,
         filename: str,
         document_data: DocumentCreate,
-        datasource: Optional[str] = None
+        datasource: Optional[str] = None,
+        custom_processors: Optional[List[str]] = None
     ) -> DocumentResponse:
         """
         创建新文档
@@ -84,13 +101,14 @@ class DocumentService:
             filename: 文件名
             document_data: 文档元数据
             datasource: 数据源名称，默认使用配置的默认数据源
+            custom_processors: 自定义处理器列表
             
         Returns:
             创建的文档响应
         """
         try:
             # 获取处理器
-            processor = await self._get_processor()
+            processor = self._get_processor()
             
             # 读取文件内容
             file_content = file.read()
@@ -106,56 +124,41 @@ class DocumentService:
             # 获取文件类型
             file_type = os.path.splitext(filename)[1].lower().lstrip(".")
             
-            # 创建元数据对象
-            metadata = {
-                "doc_id": doc_id,
+            # 创建文档记录
+            document = {
+                "id": doc_id,
                 "file_name": filename,
+                "file_path": file_path,
+                "file_type": file_type,
                 "title": document_data.title or os.path.splitext(filename)[0],
                 "description": document_data.description,
-                "file_type": file_type,
-                "file_path": file_path,
-                "status": DocumentStatus.PROCESSING,
-                "created_at": now.isoformat(),
-                "updated_at": now.isoformat(),
-                "metadata": document_data.metadata.dict() if document_data.metadata else {},
+                "status": DocumentStatus.PENDING,
                 "size_bytes": file_size,
-                "datasource": datasource
+                "metadata": document_data.metadata.dict() if document_data.metadata else {},
+                "datasource": datasource or settings.DEFAULT_DATASOURCE,
+                "created_at": now,
+                "updated_at": now
             }
             
-            # 保存元数据
-            self._save_metadata(doc_id, metadata)
+            # 保存到数据库
+            doc_id = await self.doc_repo.create(document)
             
-            # 异步处理文档（在实际项目中，这应该是一个后台任务）
-            try:
-                # 处理文档并索引
-                process_result = await processor.process_document(
-                    file_path=file_path,
-                    metadata={
-                        "doc_id": doc_id,
-                        "title": metadata["title"],
-                        "description": metadata.get("description"),
-                        **metadata["metadata"]
-                    },
-                    datasource_name=datasource
-                )
-                
-                # 更新元数据
-                metadata["status"] = DocumentStatus.COMPLETED
-                metadata["node_count"] = process_result["node_count"]
-                metadata["datasource"] = process_result.get("datasource", "primary")
-                metadata["updated_at"] = datetime.now().isoformat()
-                self._save_metadata(doc_id, metadata)
-                
-            except Exception as e:
-                # 处理失败
-                logger.error(f"文档处理失败: {str(e)}")
-                metadata["status"] = DocumentStatus.FAILED
-                metadata["error"] = str(e)
-                metadata["updated_at"] = datetime.now().isoformat()
-                self._save_metadata(doc_id, metadata)
-                raise
+            # 启动异步处理任务
+            process_document_task.delay(
+                doc_id=doc_id,
+                file_path=file_path,
+                metadata={
+                    "doc_id": doc_id,
+                    "title": document["title"],
+                    "description": document.get("description"),
+                    **(document["metadata"] or {})
+                },
+                datasource_name=datasource,
+                custom_processors=custom_processors
+            )
             
-            return self._to_document_response(metadata)
+            # 返回文档响应
+            return self._to_document_response(document)
             
         except Exception as e:
             logger.error(f"创建文档失败: {str(e)}")
@@ -171,11 +174,11 @@ class DocumentService:
         Returns:
             文档响应，如果不存在则返回None
         """
-        metadata = self._load_metadata(doc_id)
-        if not metadata:
+        document = await self.doc_repo.get(doc_id)
+        if not document:
             return None
             
-        return self._to_document_response(metadata)
+        return self._to_document_response(document)
     
     async def update_document(
         self, 
@@ -192,26 +195,30 @@ class DocumentService:
         Returns:
             更新后的文档响应，如果不存在则返回None
         """
-        metadata = self._load_metadata(doc_id)
-        if not metadata:
+        # 检查文档是否存在
+        document = await self.doc_repo.get(doc_id)
+        if not document:
             return None
             
-        # 更新元数据
+        # 准备更新数据
+        update_dict = {}
         if update_data.title is not None:
-            metadata["title"] = update_data.title
+            update_dict["title"] = update_data.title
             
         if update_data.description is not None:
-            metadata["description"] = update_data.description
+            update_dict["description"] = update_data.description
             
         if update_data.metadata is not None:
-            metadata["metadata"] = update_data.metadata.dict()
+            update_dict["metadata"] = update_data.metadata.dict()
             
-        metadata["updated_at"] = datetime.now().isoformat()
-        
-        # 保存更新后的元数据
-        self._save_metadata(doc_id, metadata)
-        
-        return self._to_document_response(metadata)
+        # 执行更新
+        if update_dict:
+            update_dict["updated_at"] = datetime.now()
+            await self.doc_repo.update(doc_id, update_dict)
+            
+        # 获取更新后的文档
+        updated_document = await self.doc_repo.get(doc_id)
+        return self._to_document_response(updated_document)
     
     async def delete_document(self, doc_id: str) -> bool:
         """
@@ -223,34 +230,34 @@ class DocumentService:
         Returns:
             删除是否成功
         """
-        metadata = self._load_metadata(doc_id)
-        if not metadata:
+        # 获取文档信息
+        document = await self.doc_repo.get(doc_id)
+        if not document:
             return False
             
         # 获取处理器
-        processor = await self._get_processor()
+        processor = self._get_processor()
         
         # 删除向量数据
         try:
-            await processor.delete_document(doc_id)
+            processor.delete_document(doc_id)
         except Exception as e:
             logger.error(f"删除向量数据失败: {str(e)}")
         
         # 删除文件
         try:
-            file_path = metadata.get("file_path")
+            file_path = document.get("file_path")
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
         except Exception as e:
             logger.error(f"删除文件失败: {str(e)}")
         
-        # 删除元数据
+        # 删除文档记录
         try:
-            metadata_path = self._get_metadata_path(doc_id)
-            if os.path.exists(metadata_path):
-                os.remove(metadata_path)
+            await self.doc_repo.delete(doc_id)
         except Exception as e:
-            logger.error(f"删除元数据失败: {str(e)}")
+            logger.error(f"删除文档记录失败: {str(e)}")
+            return False
             
         return True
     
@@ -273,34 +280,24 @@ class DocumentService:
         Returns:
             文档列表响应
         """
-        documents = []
+        # 构建过滤条件
+        filters = {}
+        if status:
+            filters["status"] = status
+        if datasource:
+            filters["datasource"] = datasource
+            
+        # 查询数据库
+        documents, total = await self.doc_repo.get_many(
+            skip=skip,
+            limit=limit,
+            filters=filters
+        )
         
-        # 遍历元数据目录
-        for filename in os.listdir(METADATA_DIR):
-            if not filename.endswith(".json"):
-                continue
-                
-            doc_id = filename.replace(".json", "")
-            metadata = self._load_metadata(doc_id)
-            
-            if not metadata:
-                continue
-                
-            # 应用状态过滤
-            if status and metadata.get("status") != status:
-                continue
-                
-            # 应用数据源过滤
-            if datasource and metadata.get("datasource") != datasource:
-                continue
-                
-            documents.append(self._to_document_response(metadata))
-            
-        # 排序、分页
-        documents.sort(key=lambda x: x.updated_at, reverse=True)
-        paginated_docs = documents[skip:skip+limit]
+        # 转换为响应对象
+        document_responses = [self._to_document_response(doc) for doc in documents]
         
         return DocumentList(
-            total=len(documents),
-            documents=paginated_docs
+            total=total,
+            documents=document_responses
         ) 

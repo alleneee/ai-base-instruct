@@ -21,6 +21,8 @@ flowchart TB
         SearchEngine["检索引擎"]
         KnowledgeMCP["知识库MCP服务"]
         KnowledgeAPI["知识库管理API"]
+        TaskQueue["异步任务队列"]
+        DocumentDB[(文档元数据数据库)]
     end
 
     subgraph BailianLayer["阿里云百炼平台"]
@@ -51,7 +53,9 @@ flowchart TB
     %% 知识库管理流程 (绿色)
     AdminConsole -->|知识库管理| KnowledgeAPI
     KnowledgeAPI -->|文档导入| DocProcessor
-    DocProcessor -->|文档处理| Vectorization
+    DocProcessor -->|异步任务| TaskQueue
+    TaskQueue -->|文档处理| Vectorization
+    DocProcessor -->|存储元数据| DocumentDB
     Vectorization -->|向量存储| VectorDB
 
     %% 提示词管理 (紫色)
@@ -75,5 +79,12 @@ flowchart TB
 
     class BusinessApp,AdminConsole applicationStyle
     class APIGateway,ModelRouter,RAGEngine,ContextManager,PromptManager,SecurityMonitoring abstractionStyle
-    class DocProcessor,Vectorization,VectorDB,SearchEngine,KnowledgeMCP,KnowledgeAPI knowledgeStyle
+    class DocProcessor,Vectorization,VectorDB,SearchEngine,KnowledgeMCP,KnowledgeAPI,TaskQueue,DocumentDB knowledgeStyle
     class LLMService,AgentOrchestration,MCPService,InfraManagement bailianStyle
+
+%% 优化架构说明
+%% 1. 异步文档处理：使用Celery实现文档处理的异步任务，提高系统响应性能
+%% 2. 依赖注入模式：通过FastAPI的依赖注入系统实现服务和仓库层的松耦合架构
+%% 3. 插件式文档处理管道：支持可扩展的文档处理器，可以灵活添加和配置不同的处理步骤
+%% 4. 统一数据访问层：使用SQLAlchemy实现对文档元数据的一致性管理
+%% 5. 请求性能优化：通过异步处理和缓存机制提升API响应速度

@@ -1,25 +1,55 @@
-"""数据库会话管理模块"""
+"""数据库会话模块"""
+from contextvars import ContextVar
 from typing import AsyncGenerator
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 
-from enterprise_kb.db.base import engine
+from enterprise_kb.core.config.settings import settings
 
-# 创建异步会话工厂
-async_session_factory = sessionmaker(
-    engine, 
-    class_=AsyncSession, 
-    expire_on_commit=False,
-    autoflush=False,
+# 创建异步引擎
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=settings.DB_ECHO,
+    future=True,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW
 )
 
-async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    """异步会话依赖项"""
-    async with async_session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise 
+# 创建会话工厂
+async_session_factory = async_sessionmaker(
+    engine, 
+    expire_on_commit=False,
+    class_=AsyncSession
+)
+
+# 上下文变量，用于存储当前请求的会话
+session_context = ContextVar("session_context", default=None)
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    获取数据库会话
+    
+    Yields:
+        数据库会话
+    """
+    session = async_session_factory()
+    try:
+        # 将会话存储到上下文变量
+        token = session_context.set(session)
+        yield session
+    finally:
+        session_context.reset(token)
+        await session.close()
+
+def get_current_session() -> AsyncSession:
+    """
+    获取当前上下文的会话
+    
+    Returns:
+        当前会话，如果不存在则创建新会话
+    """
+    session = session_context.get()
+    if session is None:
+        session = async_session_factory()
+        session_context.set(session)
+    return session 

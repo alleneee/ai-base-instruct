@@ -1,5 +1,5 @@
 """扩展的文档管理API路由"""
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Body, Query, Depends, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Body, Query, Depends, BackgroundTasks, Path
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 import json
@@ -12,6 +12,7 @@ from enterprise_kb.models.schemas import (
 from enterprise_kb.services.document_service import DocumentService
 from enterprise_kb.storage.document_processor import get_document_processor
 from enterprise_kb.core.config.settings import settings
+from enterprise_kb.api.dependencies.services import get_document_service
 
 router = APIRouter(prefix="/api/v1/documents", tags=["文档管理扩展"])
 
@@ -98,7 +99,8 @@ async def upload_document(
     use_semantic_chunking: Optional[bool] = Form(None),
     use_incremental: Optional[bool] = Form(None),
     chunking_type: Optional[str] = Form(None),
-    background_tasks: BackgroundTasks = None
+    background_tasks: BackgroundTasks = None,
+    document_service: DocumentService = Depends(get_document_service)
 ):
     """
     上传文档并处理索引到向量库
@@ -206,7 +208,8 @@ async def upload_document(
 async def analyze_document(
     file: UploadFile = File(...),
     process_after_analyze: bool = Form(False),
-    background_tasks: BackgroundTasks = None
+    background_tasks: BackgroundTasks = None,
+    document_service: DocumentService = Depends(get_document_service)
 ):
     """
     分析文档并返回推荐的处理策略
@@ -251,7 +254,10 @@ async def analyze_document(
         raise HTTPException(status_code=500, detail=f"文档分析失败: {str(e)}")
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
-async def get_document(doc_id: str):
+async def get_document(
+    doc_id: str = Path(...),
+    document_service: DocumentService = Depends(get_document_service)
+):
     """
     获取文档详情
 
@@ -267,24 +273,60 @@ async def get_document(doc_id: str):
     return doc
 
 @router.put("/{doc_id}", response_model=DocumentResponse)
-async def update_document(doc_id: str, update_data: DocumentUpdate):
+async def update_document(
+    doc_id: str = Path(...),
+    title: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    metadata_json: Optional[str] = Form(None),
+    document_service: DocumentService = Depends(get_document_service)
+):
     """
     更新文档元数据
 
     Args:
         doc_id: 文档ID
-        update_data: 更新数据
+        title: 新标题（可选）
+        description: 新描述（可选）
+        metadata_json: 新元数据JSON字符串（可选）
 
     Returns:
         更新后的文档信息
     """
-    doc = await document_service.update_document(doc_id, update_data)
-    if not doc:
-        raise HTTPException(status_code=404, detail="文档不存在")
-    return doc
+    try:
+        # 解析元数据
+        metadata = None
+        if metadata_json:
+            import json
+            try:
+                metadata_dict = json.loads(metadata_json)
+                metadata = DocumentMetadata(**metadata_dict)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="元数据JSON格式无效")
+                
+        # 创建更新模型
+        update_data = DocumentUpdate(
+            title=title,
+            description=description,
+            metadata=metadata
+        )
+        
+        # 更新文档
+        document = await document_service.update_document(doc_id, update_data)
+        if not document:
+            raise HTTPException(status_code=404, detail=f"文档不存在: {doc_id}")
+            
+        return document
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新文档失败: {str(e)}")
 
 @router.delete("/{doc_id}", response_model=DocumentProcessResponse)
-async def delete_document(doc_id: str):
+async def delete_document(
+    doc_id: str = Path(...),
+    document_service: DocumentService = Depends(get_document_service)
+):
     """
     删除文档
 
@@ -341,7 +383,8 @@ async def batch_process_documents(
     metadata: Optional[str] = Form(None),
     auto_process: bool = Form(True),
     background_processing: bool = Form(True),
-    background_tasks: BackgroundTasks = None
+    background_tasks: BackgroundTasks = None,
+    document_service: DocumentService = Depends(get_document_service)
 ):
     """
     批量上传并处理文档
@@ -444,7 +487,8 @@ async def list_documents(
     skip: int = Query(0, description="跳过的记录数"),
     limit: int = Query(100, description="返回的最大记录数"),
     status: Optional[DocumentStatus] = Query(None, description="文档状态过滤"),
-    datasource: Optional[str] = Query(None, description="数据源过滤")
+    datasource: Optional[str] = Query(None, description="数据源过滤"),
+    document_service: DocumentService = Depends(get_document_service)
 ):
     """
     获取文档列表
