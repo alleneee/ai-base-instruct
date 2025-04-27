@@ -20,6 +20,9 @@ from enterprise_kb.api.document_segment_api import router as document_segment_ro
 
 # 导入配置
 from enterprise_kb.core.config.settings import settings
+# 导入缓存和限速设置
+from enterprise_kb.core.cache import setup_cache
+from enterprise_kb.core.limiter import setup_limiter
 
 # 配置日志
 logging.basicConfig(
@@ -96,6 +99,25 @@ async def add_process_time_header(request: Request, call_next):
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
     return response
+
+# 设置缓存（现代 lifespan 方式）
+setup_cache(app)
+
+# 设置速率限制（现代 lifespan 方式）
+setup_limiter(app)
+
+# 定义自己的应用级 lifespan 函数（可选）
+@app.lifespan
+async def app_lifespan(app: FastAPI):
+    """应用级别的 lifespan 处理"""
+    # 应用启动时初始化
+    logger.info("应用启动完成，所有服务已就绪")
+    
+    yield
+    
+    # 应用关闭时清理
+    logger.info("应用正在关闭，执行清理操作")
+    # 执行其他必要的清理工作
 
 # 全局异常处理
 @app.exception_handler(HTTPException)

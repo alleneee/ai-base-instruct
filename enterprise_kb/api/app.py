@@ -55,10 +55,10 @@ async def validation_exception_handler(request, exc):
         content={"detail": errors}
     )
 
-# 设置缓存
+# 设置缓存（现代 lifespan 方式）
 setup_cache(app)
 
-# 设置速率限制
+# 设置速率限制（现代 lifespan 方式）
 setup_limiter(app)
 
 # 设置分页

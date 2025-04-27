@@ -16,18 +16,19 @@ def setup_cache(app: FastAPI) -> None:
         decode_responses=True,
     )
     
-    @app.on_event("startup")
-    async def startup():
-        """应用启动时初始化缓存"""
+    @app.lifespan
+    async def lifespan(app: FastAPI):
+        """使用lifespan管理缓存的生命周期"""
+        # 初始化缓存（启动时）
         FastAPICache.init(
             RedisBackend(redis_client), 
             prefix="enterprise_kb_cache",
             expire=settings.CACHE_EXPIRE,
         )
         
-    @app.on_event("shutdown")
-    async def shutdown():
-        """应用关闭时关闭Redis连接"""
+        yield
+        
+        # 关闭Redis连接（关闭时）
         await redis_client.close()
 
 

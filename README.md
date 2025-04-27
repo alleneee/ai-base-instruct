@@ -23,6 +23,7 @@
 - **请求性能优化**：通过异步处理和缓存机制提升API响应速度
 - **令牌使用跟踪**：使用TokenCountingHandler跟踪嵌入和LLM令牌使用情况
 - **改进的Milvus集成**：使用LlamaIndex官方Milvus集成，支持索引管理策略配置
+- **现代化应用生命周期管理**：使用FastAPI最新的lifespan装饰器管理应用资源的生命周期
 
 ## 技术栈
 
@@ -54,6 +55,7 @@
 - **向量存储适配器**：与Milvus交互，管理向量数据
 - **检索引擎**：实现高效的语义检索
 - **REST API**：提供Web服务接口
+- **应用生命周期管理**：使用FastAPI lifespan管理缓存、速率限制等资源
 
 ## 快速开始
 
@@ -240,3 +242,29 @@ class MyNewProcessor(DocumentProcessor):
 ## 许可证
 
 本项目采用MIT许可证。详见[LICENSE](LICENSE)文件。
+
+## 先进特性
+
+### 现代化应用生命周期管理
+
+项目使用FastAPI的现代lifespan模式管理应用生命周期：
+
+```python
+@app.lifespan
+async def lifespan(app: FastAPI):
+    # 应用启动时执行的初始化代码
+    yield
+    # 应用关闭时执行的清理代码
+```
+
+这种方式相比传统的`on_event`装饰器有以下优势：
+
+- 将相关的启动和关闭逻辑放在同一个函数中
+- 更好的资源管理和异常处理
+- 支持多个模块化的lifespan函数
+
+详细文档请参阅[FastAPI生命周期管理](docs/fastapi_lifespan.md)。
+
+### 自适应文档处理系统
+
+本系统实现了智能文档处理能力，可以根据文档类型和特征自动选择最佳处理路径：
