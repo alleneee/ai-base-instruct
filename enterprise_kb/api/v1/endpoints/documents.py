@@ -404,7 +404,7 @@ async def get_task_status(task_id: str) -> Dict[str, Any]:
     """
     try:
         from celery.result import AsyncResult
-        from enterprise_kb.core.celery_app import celery_app
+        from enterprise_kb.core.unified_celery import celery_app
         
         # 获取任务结果
         task_result = AsyncResult(task_id, app=celery_app)

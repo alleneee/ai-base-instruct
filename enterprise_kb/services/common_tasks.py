@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from enterprise_kb.core.celery_app import celery_app
+from enterprise_kb.core.unified_celery import celery_app
 from enterprise_kb.core.config import settings
 from enterprise_kb.db.repositories.base import BaseRepository
 

@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional, Union
 import logging
 from pathlib import Path
 
-from enterprise_kb.core.celery_app import celery_app
+from enterprise_kb.core.unified_celery import celery_app
 from enterprise_kb.core.config import settings
 from enterprise_kb.db.repositories.document import DocumentRepository
 from enterprise_kb.db.repositories.knowledge_base import KnowledgeBaseRepository

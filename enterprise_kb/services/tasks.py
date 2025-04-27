@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 import os
 
-from enterprise_kb.core.celery_app import celery_app
+from enterprise_kb.core.unified_celery import celery_app
 from enterprise_kb.core.config.settings import settings
 from enterprise_kb.services.document_processor import DocumentProcessor
 from enterprise_kb.services.vector_store import VectorStoreService
