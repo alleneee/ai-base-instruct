@@ -5,6 +5,9 @@
 ## 主要功能
 
 - **文档处理**：支持PDF、Word、文本等多种格式文档的上传和处理
+- **Markdown转换**：使用MarkItDown自动将各种文档格式转换为标准Markdown格式
+- **智能文档分析**：自动分析文档复杂度和结构，选择最佳处理路径
+- **自适应分块策略**：根据文档类型和特性优化分块参数
 - **向量化存储**：使用Milvus向量数据库高效存储和检索文档向量
 - **语义检索**：基于LlamaIndex实现高精度语义检索
 - **RESTful API**：提供完整的REST API，便于集成到现有系统
@@ -15,16 +18,17 @@
 - **数据验证**：Pydantic v2
 - **向量数据库**：Milvus
 - **知识检索**：LlamaIndex
-- **文档处理**：Unstructured, PyMuPDF等
+- **文档处理**：MarkItDown, Unstructured, PyMuPDF等
 
 ## 系统架构
 
 系统采用模块化设计，主要包括以下组件：
 
-- 文档处理管道：负责解析、切分和向量化文档
-- 向量存储适配器：与Milvus交互，管理向量数据
-- 检索引擎：实现高效的语义检索
-- REST API：提供Web服务接口
+- **智能文档处理系统**：分析文档特征，自动选择最佳处理路径
+- **文档处理管道**：负责解析、切分和向量化文档
+- **向量存储适配器**：与Milvus交互，管理向量数据
+- **检索引擎**：实现高效的语义检索
+- **REST API**：提供Web服务接口
 
 ## 快速开始
 
@@ -73,13 +77,76 @@ python -m enterprise_kb.main
 
 - **文档管理**
   - `POST /api/v1/documents`：上传并处理文档
+  - `POST /api/v1/documents/analyze`：分析文档并获取推荐处理策略
   - `GET /api/v1/documents`：获取文档列表
   - `GET /api/v1/documents/{doc_id}`：获取文档详情
+  - `GET /api/v1/documents/markdown/{doc_id}`：获取文档的Markdown内容
   - `PUT /api/v1/documents/{doc_id}`：更新文档元数据
   - `DELETE /api/v1/documents/{doc_id}`：删除文档
 
 - **知识检索**
   - `POST /api/v1/search`：语义检索相关知识
+
+## 自适应文档处理系统
+
+本系统实现了智能文档处理能力，可以根据文档类型和特征自动选择最佳处理路径：
+
+### 文档分析
+
+系统会自动分析上传文档的特征：
+
+- 检测文档类型（PDF、Word、代码、表格等）
+- 识别文档中的表格、图片、代码等特殊内容
+- 评估文档的结构复杂度
+- 分析文本密度和语言特征
+- 估算文档的令牌数和处理资源需求
+
+### 处理策略决策
+
+基于分析结果，系统自动决定：
+
+- 是否需要将文档转换为Markdown格式
+  - 代码文件和结构简单的文本通常不需要转换
+  - 复杂的PDF和Word文档通常先转为Markdown
+- 使用哪种分块策略和参数
+  - 按内容类型选择适当的解析器
+  - 动态调整块大小和重叠度
+
+### 智能分块
+
+系统会根据文档特性选择最合适的分块方式：
+
+- Markdown文档 - 使用基于标记的分块，遵循标题和段落结构
+- 代码文件 - 使用语法感知分块，按函数和类分割
+- 表格数据 - 使用表格感知分块，保留行列关系
+- PDF文档 - 根据内容密度调整分块大小
+- 长句文本 - 使用更大的重叠确保上下文完整
+
+### API集成
+
+通过API可以控制处理过程：
+
+- 自动分析并处理 - 系统全自动选择最佳路径
+- 仅分析 - 获取建议策略，人工决定是否继续
+- 自定义处理 - 提供明确的处理参数，覆盖系统建议
+
+### 使用示例
+
+```python
+# 分析文档
+response = requests.post(
+    "http://localhost:8000/api/v1/documents/analyze",
+    files={"file": open("document.pdf", "rb")}
+)
+analysis = response.json()
+
+# 自动处理文档
+response = requests.post(
+    "http://localhost:8000/api/v1/documents",
+    files={"file": open("document.pdf", "rb")},
+    data={"auto_process": "true"}
+)
+```
 
 ## 部署说明
 

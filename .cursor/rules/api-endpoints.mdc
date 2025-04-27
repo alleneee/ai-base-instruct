@@ -1,0 +1,128 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# API端点设计
+
+本规则文件描述了企业知识库平台的API端点设计和使用方法。
+
+## 概述
+
+平台API采用RESTful设计风格，主要功能分为以下几组：
+
+- 文档管理 - 上传、处理、删除文档
+- 知识检索 - 语义搜索和混合检索
+- 数据源管理 - 管理向量数据源
+- 系统管理 - 监控和配置
+
+## 文档管理API
+
+### 文档上传与处理
+
+主入口点：[documents_extended.py](mdc:enterprise_kb/api/documents_extended.py)
+
+- `POST /api/v1/documents` - 上传并处理单个文档
+  - 支持自动文档分析
+  - 支持自定义处理策略
+  - 支持后台处理
+
+- `POST /api/v1/documents/analyze` - 仅分析文档
+  - 返回推荐处理策略
+  - 可选择是否在分析后处理
+
+- `POST /api/v1/documents/batch/process` - 批量处理文档
+  - 支持多文件上传
+  - 每个文件使用最优策略
+
+### 文档操作
+
+- `GET /api/v1/documents/{doc_id}` - 获取文档详情
+- `GET /api/v1/documents/markdown/{doc_id}` - 获取文档的Markdown内容
+- `PUT /api/v1/documents/{doc_id}` - 更新文档元数据
+- `DELETE /api/v1/documents/{doc_id}` - 删除文档
+- `POST /api/v1/documents/bulk/delete` - 批量删除文档
+
+## 检索API
+
+主入口点：[retrieval.py](mdc:enterprise_kb/api/retrieval.py)
+
+- `POST /api/v1/retrieval/search` - 检索文档
+  - 支持向量、关键词、混合搜索模式
+  - 支持元数据过滤
+  - 支持指定数据源
+
+- `POST /api/v1/retrieval/similar` - 查找相似文档
+  - 基于文档ID查找相似内容
+
+## API请求示例
+
+### 上传文档
+
+```
+POST /api/v1/documents
+Content-Type: multipart/form-data
+
+file: <文件内容>
+title: 示例文档
+description: 这是一个示例文档
+auto_process: true
+convert_to_markdown: <空表示自动决定>
+```
+
+### 分析文档
+
+```
+POST /api/v1/documents/analyze
+Content-Type: multipart/form-data
+
+file: <文件内容>
+process_after_analyze: false
+```
+
+### 检索知识
+
+```
+POST /api/v1/retrieval/search
+Content-Type: application/json
+
+{
+  "query": "查询文本",
+  "search_type": "hybrid",
+  "top_k": 5,
+  "datasources": ["primary"],
+  "filters": {"file_type": "pdf"},
+  "rerank": true
+}
+```
+
+## 错误处理
+
+API使用标准HTTP状态码表示不同类型的错误：
+
+- 400 - 请求参数错误
+- 404 - 资源不存在
+- 500 - 服务器内部错误
+
+错误响应格式：
+
+```json
+{
+  "detail": "错误详情描述"
+}
+```
+
+## 认证与安全
+
+- API使用JWT认证
+- 部分端点支持公开访问
+- 通过中间件实现访问控制和频率限制
+
+## 扩展指南
+
+添加新的API端点：
+
+1. 在相应的路由文件中添加新端点
+2. 在`main.py`中注册路由
+3. 更新API文档
+4. 添加错误处理和验证逻辑

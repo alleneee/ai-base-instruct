@@ -11,6 +11,7 @@ from enterprise_kb.api.documents_extended import router as documents_router
 from enterprise_kb.api.datasources import router as datasources_router
 from enterprise_kb.api.retrieval import router as retrieval_router
 from enterprise_kb.api.ragflow import router as ragflow_router
+from enterprise_kb.api.celery_tasks import router as celery_router
 
 # 导入配置
 from enterprise_kb.core.config.settings import settings
@@ -77,6 +78,7 @@ app.include_router(documents_router, prefix=settings.API_PREFIX)
 app.include_router(datasources_router, prefix=settings.API_PREFIX)
 app.include_router(retrieval_router, prefix=settings.API_PREFIX)
 app.include_router(ragflow_router, prefix=settings.API_PREFIX)
+app.include_router(celery_router)
 
 @app.get("/")
 async def root():

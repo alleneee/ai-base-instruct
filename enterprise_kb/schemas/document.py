@@ -3,12 +3,77 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class DocumentBase(BaseModel):
+    """文档基础模型"""
+    title: Optional[str] = Field(None, description="文档标题")
+    description: Optional[str] = Field(None, description="文档描述")
+    file_type: Optional[str] = Field(None, description="文件类型")
+    
+
+class DocumentCreate(DocumentBase):
+    """文档创建模型"""
+    tags: Optional[List[str]] = Field(default_factory=list, description="文档标签")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="元数据")
+    source: Optional[str] = Field(None, description="文档来源")
+    convert_to_markdown: bool = Field(True, description="是否转换为Markdown格式")
+    
+
+class DocumentResponse(DocumentBase):
+    """文档响应模型"""
+    id: str = Field(..., description="文档ID")
+    file_name: str = Field(..., description="文件名")
+    file_path: str = Field(..., description="文件路径")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: Optional[datetime] = Field(None, description="更新时间")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="元数据")
+    tags: List[str] = Field(default_factory=list, description="文档标签")
+    node_count: Optional[int] = Field(None, description="节点数量")
+    status: str = Field("active", description="文档状态")
+    
+
 class DocumentUpdate(BaseModel):
-    """更新文档请求模型"""
-    name: Optional[str] = Field(None, description="文档名称")
-    meta_fields: Optional[Dict[str, Any]] = Field(None, description="元字段")
-    chunk_method: Optional[str] = Field(None, description="分块方法")
-    parser_config: Optional[Dict[str, Any]] = Field(None, description="解析器配置")
+    """文档更新模型"""
+    title: Optional[str] = Field(None, description="文档标题")
+    description: Optional[str] = Field(None, description="文档描述")
+    tags: Optional[List[str]] = Field(None, description="文档标签")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="元数据")
+    status: Optional[str] = Field(None, description="文档状态")
+    
+
+class DocumentFilter(BaseModel):
+    """文档筛选模型"""
+    tags: Optional[List[str]] = Field(None, description="按标签筛选")
+    file_type: Optional[str] = Field(None, description="按文件类型筛选")
+    status: Optional[str] = Field(None, description="按状态筛选")
+    created_after: Optional[datetime] = Field(None, description="创建时间晚于")
+    created_before: Optional[datetime] = Field(None, description="创建时间早于")
+    search_text: Optional[str] = Field(None, description="全文搜索")
+    
+
+class MarkdownDocument(BaseModel):
+    """Markdown文档模型"""
+    id: str = Field(..., description="文档ID")
+    content: str = Field(..., description="Markdown内容")
+    original_file_path: Optional[str] = Field(None, description="原始文件路径")
+    original_file_type: Optional[str] = Field(None, description="原始文件类型")
+    markdown_path: str = Field(..., description="Markdown文件路径")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="元数据")
+    created_at: datetime = Field(..., description="创建时间")
+    
+
+class DocumentConversionRequest(BaseModel):
+    """文档转换请求模型"""
+    doc_id: str = Field(..., description="文档ID")
+    convert_to_markdown: bool = Field(True, description="是否转换为Markdown格式")
+    force_reconvert: bool = Field(False, description="强制重新转换")
+    
+
+class DocumentConversionResponse(BaseModel):
+    """文档转换响应模型"""
+    doc_id: str = Field(..., description="文档ID")
+    status: str = Field(..., description="转换状态")
+    markdown_path: Optional[str] = Field(None, description="Markdown文件路径")
+    message: Optional[str] = Field(None, description="消息")
 
 
 class DocumentDeleteRequest(BaseModel):

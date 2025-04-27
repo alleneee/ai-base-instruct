@@ -1,0 +1,84 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 向量存储系统
+
+本规则文件描述了企业知识库平台的向量存储系统架构和实现。
+
+## 架构概述
+
+向量存储系统主要由以下组件构成：
+
+1. **向量存储管理器**：[VectorStoreManager](mdc:enterprise_kb/storage/vector_store_manager.py) - 管理多个向量数据源
+2. **向量存储适配器**：连接不同的向量数据库
+3. **数据源抽象**：[DataSource](mdc:enterprise_kb/storage/datasource) - 提供通用数据源接口
+4. **检索引擎**：[RetrievalEngine](mdc:enterprise_kb/storage/retrieval_engine.py) - 提供高效检索能力
+
+## 向量数据库集成
+
+平台支持多种向量数据库：
+
+- **Milvus**：主要向量存储引擎，通过[MilvusClient](mdc:enterprise_kb/utils/milvus_client.py)集成
+- **FAISS**：轻量级向量检索，适合小规模部署
+- **Qdrant**：提供高级过滤和查询能力
+
+每个向量数据库通过专门的适配器集成到系统中，提供统一的接口。
+
+## 数据源管理
+
+[VectorStoreManager](mdc:enterprise_kb/storage/vector_store_manager.py)提供以下功能：
+
+- 添加、删除和管理数据源
+- 健康检查和状态监控
+- 向各数据源添加和删除节点
+- 跨数据源查询和检索
+
+## 索引管理
+
+向量索引使用LlamaIndex提供的能力：
+
+- 每个数据源可以有自己的索引
+- 支持增量索引更新
+- 索引自动合并和优化
+
+## 存储策略
+
+系统实现了多级存储策略：
+
+1. **原始文档存储**：保存原始上传文件
+2. **Markdown转换存储**：保存Markdown转换结果
+3. **向量存储**：保存文档向量表示
+4. **元数据存储**：保存文档和向量的关联信息
+
+## 查询与检索
+
+检索主要通过[retrieval.py](mdc:enterprise_kb/api/retrieval.py)提供：
+
+- 支持向量语义搜索
+- 支持混合检索策略
+- 支持过滤和重排序
+- 支持跨数据源检索
+
+## 数据流
+
+1. 文档处理后的节点 → 向量化 → 存储到向量数据库
+2. 查询 → 向量化 → 搜索向量数据库 → 返回匹配结果
+3. 结果可以根据相关性进行重排
+
+## 配置参数
+
+主要配置在[settings.py](mdc:enterprise_kb/core/config/settings.py)中：
+
+- Milvus连接参数
+- 向量维度设置
+- 集合名称和字段映射
+
+## 扩展指南
+
+添加新的向量数据库支持：
+1. 在`datasource`目录下创建新的适配器
+2. 实现`DataSource`接口
+3. 在`DataSourceFactory`中注册新的数据源类型
+4. 更新配置和文档

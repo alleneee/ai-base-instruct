@@ -2,7 +2,7 @@ import os
 from typing import Optional, Dict, Any, List, Union, AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from pydantic import validator
+from pydantic import validator, Field
 
 class Settings(BaseSettings):
     # 应用配置
@@ -111,6 +111,23 @@ class Settings(BaseSettings):
     # CORS配置
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
+    # Celery配置
+    CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/0")
+    CELERY_ALWAYS_EAGER: bool = Field(default=False)  # 设置为True时会同步执行任务，便于调试
+    
+    # 文档处理配置
+    MAX_CONCURRENT_TASKS: int = Field(default=10)
+    DOCUMENT_CHUNK_SIZE: int = Field(default=500)
+    DOCUMENT_CHUNK_OVERLAP: int = Field(default=50)
+    
+    # 索引配置
+    DEFAULT_INDEX_TYPE: str = Field(default="vector")
+    INDEX_REFRESH_INTERVAL: int = Field(default=86400)  # 每天刷新一次索引，单位为秒
+    
+    # 项目名称
+    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "enterprise-kb")
+
     @validator("BACKEND_CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
         """处理CORS来源"""
@@ -131,4 +148,9 @@ def get_settings() -> Settings:
     """获取应用设置的缓存实例"""
     return Settings()
 
-settings = get_settings() 
+settings = get_settings()
+
+# 确保存储目录存在
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+os.makedirs(settings.PROCESSED_DIR, exist_ok=True)
+os.makedirs(os.path.join(settings.PROCESSED_DIR, "markdown"), exist_ok=True) 
