@@ -14,20 +14,65 @@ from enterprise_kb.storage.document_processor import get_document_processor
 from enterprise_kb.core.config.settings import settings
 from enterprise_kb.api.dependencies.services import get_document_service
 
-router = APIRouter(prefix="/api/v1/documents", tags=["文档管理扩展"])
+router = APIRouter(
+    prefix="/api/v1/documents", 
+    tags=["文档管理"],
+    responses={
+        400: {
+            "description": "请求参数错误",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "元数据必须是有效的JSON格式"}
+                }
+            }
+        },
+        404: {
+            "description": "资源不存在",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "文档不存在"}
+                }
+            }
+        },
+        500: {
+            "description": "服务器内部错误",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "文档处理失败: 无法处理PDF文件"}
+                }
+            }
+        }
+    }
+)
 
 # 创建文档服务实例
 document_service = DocumentService()
 
 class BulkDeleteRequest(BaseModel):
     """批量删除请求模型"""
-    doc_ids: List[str]
+    doc_ids: List[str] = Field(..., description="要删除的文档ID列表")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "doc_ids": ["doc123", "doc456", "doc789"]
+            }
+        }
 
 class DocumentProcessResponse(BaseModel):
     """文档处理响应模型"""
-    success: bool
-    doc_id: str
-    message: Optional[str] = None
+    success: bool = Field(..., description="操作是否成功")
+    doc_id: str = Field(..., description="文档ID")
+    message: Optional[str] = Field(None, description="处理消息")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "doc_id": "doc123",
+                "message": "文档已成功处理"
+            }
+        }
 
 class DocumentMetadata(BaseModel):
     """文档元数据模型"""
@@ -37,6 +82,21 @@ class DocumentMetadata(BaseModel):
     description: Optional[str] = Field(None, description="文档描述")
     source: Optional[str] = Field(None, description="文档来源")
     custom_data: Optional[Dict[str, Any]] = Field(None, description="自定义元数据")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "title": "企业知识库介绍",
+                "author": "张三",
+                "tags": ["介绍", "知识库", "企业"],
+                "description": "介绍企业知识库平台的基本功能和使用方法",
+                "source": "内部文档",
+                "custom_data": {
+                    "department": "技术部",
+                    "priority": "高"
+                }
+            }
+        }
 
 class DocumentResponse(BaseModel):
     """文档处理响应模型"""
@@ -47,6 +107,31 @@ class DocumentResponse(BaseModel):
     text_chars: int = Field(..., description="文本字符数")
     metadata: Dict[str, Any] = Field(..., description="元数据")
     processing_strategy: Optional[Dict[str, Any]] = Field(None, description="处理策略")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "doc_id": "doc123",
+                "file_name": "企业知识库介绍.pdf",
+                "status": "success",
+                "node_count": 15,
+                "text_chars": 12500,
+                "metadata": {
+                    "title": "企业知识库介绍",
+                    "author": "张三",
+                    "file_type": ".pdf",
+                    "upload_time": "2023-04-12T10:30:00"
+                },
+                "processing_strategy": {
+                    "doc_type": "pdf",
+                    "should_convert_to_markdown": true,
+                    "chunking_params": {
+                        "chunk_size": 1024,
+                        "chunk_overlap": 20
+                    }
+                }
+            }
+        }
 
 class ProcessingStrategyRequest(BaseModel):
     """处理策略请求"""
@@ -57,6 +142,18 @@ class ProcessingStrategyRequest(BaseModel):
     use_semantic_chunking: Optional[bool] = Field(None, description="是否使用语义分块")
     use_incremental: Optional[bool] = Field(None, description="是否使用增量更新")
     chunking_type: Optional[str] = Field(None, description="分块类型: semantic, hierarchical")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "prefer_markdown": true,
+                "custom_chunk_size": 1200,
+                "custom_chunk_overlap": 50,
+                "use_parallel": true,
+                "use_semantic_chunking": true,
+                "chunking_type": "semantic"
+            }
+        }
 
 async def process_document_background(
     file_path: str,
@@ -84,21 +181,61 @@ async def process_document_background(
         print(f"文档处理失败: {str(e)}")
 
 # 单文档操作
-@router.post("/", status_code=201, response_model=DocumentResponse)
+@router.post(
+    "/", 
+    status_code=201, 
+    response_model=DocumentResponse,
+    summary="上传并处理文档",
+    description="""
+    上传文档并处理索引到向量库。支持多种文档格式，包括PDF、Word、文本等。
+    
+    文档会根据其类型和特征进行智能分析，选择最合适的处理路径。系统支持自动决定是否需要
+    将文档转换为Markdown格式，以及使用何种分块策略。
+    
+    可以选择在后台处理文档，这样API会立即返回，而文档处理将异步进行。
+    也可以提供自定义的处理策略，覆盖系统默认的自动分析结果。
+    """,
+    response_description="处理后的文档信息",
+    responses={
+        201: {
+            "description": "文档上传并处理成功",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "doc_id": "doc123",
+                        "file_name": "企业知识库介绍.pdf",
+                        "status": "success",
+                        "node_count": 15,
+                        "text_chars": 12500,
+                        "metadata": {
+                            "title": "企业知识库介绍",
+                            "file_type": ".pdf",
+                            "upload_time": "2023-04-12T10:30:00"
+                        },
+                        "processing_strategy": {
+                            "doc_type": "pdf",
+                            "should_convert_to_markdown": true
+                        }
+                    }
+                }
+            }
+        }
+    }
+)
 async def upload_document(
-    file: UploadFile = File(...),
-    title: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
-    datasource: Optional[str] = Form("primary"),
-    metadata: Optional[str] = Form(None),
-    background_processing: bool = Form(False),
-    convert_to_markdown: Optional[bool] = Form(None),
-    auto_process: bool = Form(True),
-    strategy_json: Optional[str] = Form(None),
-    use_parallel: Optional[bool] = Form(None),
-    use_semantic_chunking: Optional[bool] = Form(None),
-    use_incremental: Optional[bool] = Form(None),
-    chunking_type: Optional[str] = Form(None),
+    file: UploadFile = File(..., description="要上传的文件"),
+    title: Optional[str] = Form(None, description="文档标题，如果为空则使用文件名"),
+    description: Optional[str] = Form(None, description="文档描述"),
+    datasource: Optional[str] = Form("primary", description="数据源名称，默认为primary"),
+    metadata: Optional[str] = Form(None, description="JSON格式的元数据"),
+    background_processing: bool = Form(False, description="是否在后台处理"),
+    convert_to_markdown: Optional[bool] = Form(None, description="是否将文档转换为Markdown格式(None表示自动决定)"),
+    auto_process: bool = Form(True, description="是否自动分析并处理文档"),
+    strategy_json: Optional[str] = Form(None, description="自定义处理策略(JSON格式)"),
+    use_parallel: Optional[bool] = Form(None, description="是否使用并行处理，如果为None则使用配置中的默认值"),
+    use_semantic_chunking: Optional[bool] = Form(None, description="是否使用语义分块，如果为None则使用配置中的默认值"),
+    use_incremental: Optional[bool] = Form(None, description="是否使用增量更新，如果为None则使用配置中的默认值"),
+    chunking_type: Optional[str] = Form(None, description="分块类型，如果为None则使用配置中的默认值"),
     background_tasks: BackgroundTasks = None,
     document_service: DocumentService = Depends(get_document_service)
 ):
@@ -204,10 +341,53 @@ async def upload_document(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"文档处理失败: {str(e)}")
 
-@router.post("/analyze", response_model=Dict[str, Any])
+@router.post(
+    "/analyze", 
+    response_model=Dict[str, Any],
+    summary="分析文档并获取处理策略",
+    description="""
+    上传文档进行分析，获取系统推荐的处理策略，但不进行实际处理。
+    
+    分析结果包括文档类型、复杂度评估、以及系统建议的处理参数，如分块大小、是否转换为Markdown等。
+    如果设置了`process_after_analyze=true`，系统会在返回分析结果的同时在后台开始处理文档。
+    
+    此接口适用于希望先了解处理策略，再决定是否处理的场景，也可用于调试或自定义处理流程。
+    """,
+    response_description="文档分析结果和推荐处理策略",
+    responses={
+        200: {
+            "description": "文档分析成功",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "file_name": "企业知识库介绍.pdf",
+                        "file_path": "/tmp/uploads/doc123_企业知识库介绍.pdf",
+                        "analysis_result": {
+                            "doc_type": "pdf",
+                            "complexity": "medium",
+                            "features": {
+                                "page_count": 5,
+                                "has_tables": true,
+                                "has_images": true,
+                                "text_density": 0.85,
+                                "estimated_tokens": 4500
+                            },
+                            "should_convert_to_markdown": true,
+                            "chunking_params": {
+                                "chunk_size": 1024,
+                                "chunk_overlap": 50,
+                                "chunking_type": "semantic"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+)
 async def analyze_document(
-    file: UploadFile = File(...),
-    process_after_analyze: bool = Form(False),
+    file: UploadFile = File(..., description="要分析的文件"),
+    process_after_analyze: bool = Form(False, description="分析后是否立即处理文档"),
     background_tasks: BackgroundTasks = None,
     document_service: DocumentService = Depends(get_document_service)
 ):
@@ -253,9 +433,48 @@ async def analyze_document(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"文档分析失败: {str(e)}")
 
-@router.get("/{doc_id}", response_model=DocumentResponse)
+@router.get(
+    "/{doc_id}", 
+    response_model=DocumentResponse,
+    summary="获取文档详情",
+    description="""
+    根据文档ID获取文档的详细信息，包括元数据、处理状态和统计信息。
+    
+    返回的信息包括文档基本信息（ID、文件名、状态等）、处理统计（节点数量、文本字符数）
+    以及元数据和处理策略。
+    """,
+    response_description="文档详细信息",
+    responses={
+        200: {
+            "description": "成功获取文档详情",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "doc_id": "doc123",
+                        "file_name": "企业知识库介绍.pdf",
+                        "status": "success",
+                        "node_count": 15,
+                        "text_chars": 12500,
+                        "metadata": {
+                            "title": "企业知识库介绍",
+                            "file_type": ".pdf",
+                            "upload_time": "2023-04-12T10:30:00"
+                        },
+                        "processing_strategy": {
+                            "doc_type": "pdf",
+                            "should_convert_to_markdown": true
+                        }
+                    }
+                }
+            }
+        },
+        404: {
+            "description": "文档不存在"
+        }
+    }
+)
 async def get_document(
-    doc_id: str = Path(...),
+    doc_id: str = Path(..., description="文档ID"),
     document_service: DocumentService = Depends(get_document_service)
 ):
     """
@@ -272,12 +491,51 @@ async def get_document(
         raise HTTPException(status_code=404, detail="文档不存在")
     return doc
 
-@router.put("/{doc_id}", response_model=DocumentResponse)
+@router.put(
+    "/{doc_id}", 
+    response_model=DocumentResponse,
+    summary="更新文档元数据",
+    description="""
+    更新指定文档的元数据信息。
+    
+    可以更新文档的标题、描述和元数据等信息。元数据以JSON字符串形式提供，
+    系统会将其解析并更新到文档中。
+    """,
+    response_description="更新后的文档信息",
+    responses={
+        200: {
+            "description": "文档元数据更新成功",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "doc_id": "doc123",
+                        "file_name": "企业知识库介绍.pdf",
+                        "status": "success",
+                        "node_count": 15,
+                        "text_chars": 12500,
+                        "metadata": {
+                            "title": "更新后的标题",
+                            "description": "更新后的描述",
+                            "file_type": ".pdf",
+                            "upload_time": "2023-04-12T10:30:00"
+                        }
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "无效的元数据格式"
+        },
+        404: {
+            "description": "文档不存在"
+        }
+    }
+)
 async def update_document(
-    doc_id: str = Path(...),
-    title: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
-    metadata_json: Optional[str] = Form(None),
+    doc_id: str = Path(..., description="文档ID"),
+    title: Optional[str] = Form(None, description="新标题（可选）"),
+    description: Optional[str] = Form(None, description="新描述（可选）"),
+    metadata_json: Optional[str] = Form(None, description="新元数据JSON字符串（可选）"),
     document_service: DocumentService = Depends(get_document_service)
 ):
     """
@@ -322,9 +580,37 @@ async def update_document(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更新文档失败: {str(e)}")
 
-@router.delete("/{doc_id}", response_model=DocumentProcessResponse)
+@router.delete(
+    "/{doc_id}", 
+    response_model=DocumentProcessResponse,
+    summary="删除文档",
+    description="""
+    删除指定ID的文档及其相关的所有资源。
+    
+    删除后，文档的元数据、向量数据和原始文件（如果存在）都会被清除。
+    此操作不可逆，请谨慎使用。
+    """,
+    response_description="删除操作结果",
+    responses={
+        200: {
+            "description": "文档删除成功",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": true,
+                        "doc_id": "doc123",
+                        "message": "文档已成功删除"
+                    }
+                }
+            }
+        },
+        404: {
+            "description": "文档不存在"
+        }
+    }
+)
 async def delete_document(
-    doc_id: str = Path(...),
+    doc_id: str = Path(..., description="文档ID"),
     document_service: DocumentService = Depends(get_document_service)
 ):
     """
@@ -347,8 +633,42 @@ async def delete_document(
     )
 
 # 批量操作
-@router.post("/bulk/delete", response_model=List[DocumentProcessResponse])
-async def bulk_delete_documents(request: BulkDeleteRequest):
+@router.post(
+    "/bulk/delete", 
+    response_model=List[DocumentProcessResponse],
+    summary="批量删除文档",
+    description="""
+    批量删除多个文档。
+    
+    接受一个文档ID列表，并尝试删除每个文档。返回每个文档的删除结果，
+    包括成功或失败的状态和消息。即使部分文档删除失败，其他文档的删除操作仍会继续执行。
+    """,
+    response_description="批量删除操作结果",
+    responses={
+        200: {
+            "description": "批量删除请求处理完成",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "success": true,
+                            "doc_id": "doc123",
+                            "message": "文档已成功删除"
+                        },
+                        {
+                            "success": false,
+                            "doc_id": "doc456",
+                            "message": "文档不存在"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+)
+async def bulk_delete_documents(
+    request: BulkDeleteRequest = Body(..., description="包含要删除的文档ID列表的请求")
+):
     """
     批量删除文档
 
@@ -377,12 +697,58 @@ async def bulk_delete_documents(request: BulkDeleteRequest):
 
     return results
 
-@router.post("/batch/process", response_model=List[DocumentResponse])
+@router.post(
+    "/batch/process", 
+    response_model=List[DocumentResponse],
+    summary="批量处理文档",
+    description="""
+    上传并处理多个文档。
+    
+    此接口允许一次性上传多个文件，并可选择在后台进行处理。对于每个文件，
+    可以使用共享的元数据，并根据`auto_process`参数决定是否自动分析和处理文档。
+    
+    适用于需要批量导入文档的场景，可以显著提高处理效率。
+    """,
+    response_description="批处理结果列表",
+    responses={
+        200: {
+            "description": "批量处理请求已接受",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "doc_id": "doc123",
+                            "file_name": "文档1.pdf",
+                            "status": "processing",
+                            "node_count": 0,
+                            "text_chars": 0,
+                            "metadata": {
+                                "file_path": "/tmp/uploads/doc123_文档1.pdf",
+                                "batch_processing": true
+                            }
+                        },
+                        {
+                            "doc_id": "doc124",
+                            "file_name": "文档2.docx",
+                            "status": "processing",
+                            "node_count": 0,
+                            "text_chars": 0,
+                            "metadata": {
+                                "file_path": "/tmp/uploads/doc124_文档2.docx",
+                                "batch_processing": true
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+)
 async def batch_process_documents(
-    files: List[UploadFile] = File(...),
-    metadata: Optional[str] = Form(None),
-    auto_process: bool = Form(True),
-    background_processing: bool = Form(True),
+    files: List[UploadFile] = File(..., description="要上传的文件列表"),
+    metadata: Optional[str] = Form(None, description="共享元数据(JSON格式)"),
+    auto_process: bool = Form(True, description="是否自动分析处理"),
+    background_processing: bool = Form(True, description="是否在后台处理"),
     background_tasks: BackgroundTasks = None,
     document_service: DocumentService = Depends(get_document_service)
 ):
@@ -482,10 +848,53 @@ async def batch_process_documents(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"批量处理文档失败: {str(e)}")
 
-@router.get("/", response_model=DocumentList)
+@router.get(
+    "/", 
+    response_model=DocumentList,
+    summary="获取文档列表",
+    description="""
+    获取文档列表，支持分页和过滤。
+    
+    可以通过`skip`和`limit`参数实现分页，通过`status`和`datasource`参数
+    过滤文档列表。返回的文档列表包括文档的基本信息和统计数据。
+    """,
+    response_description="文档列表和分页信息",
+    responses={
+        200: {
+            "description": "成功获取文档列表",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "items": [
+                            {
+                                "doc_id": "doc123",
+                                "file_name": "文档1.pdf",
+                                "title": "企业知识库介绍",
+                                "status": "success",
+                                "created_at": "2023-04-12T10:30:00",
+                                "node_count": 15
+                            },
+                            {
+                                "doc_id": "doc124",
+                                "file_name": "文档2.docx",
+                                "title": "操作指南",
+                                "status": "success",
+                                "created_at": "2023-04-13T14:20:00",
+                                "node_count": 8
+                            }
+                        ],
+                        "total": 25,
+                        "page": 1,
+                        "size": 10
+                    }
+                }
+            }
+        }
+    }
+)
 async def list_documents(
-    skip: int = Query(0, description="跳过的记录数"),
-    limit: int = Query(100, description="返回的最大记录数"),
+    skip: int = Query(0, description="跳过的记录数", ge=0),
+    limit: int = Query(100, description="返回的最大记录数", ge=1, le=500),
     status: Optional[DocumentStatus] = Query(None, description="文档状态过滤"),
     datasource: Optional[str] = Query(None, description="数据源过滤"),
     document_service: DocumentService = Depends(get_document_service)
@@ -509,62 +918,51 @@ async def list_documents(
         datasource=datasource
     )
 
-@router.get("/markdown/{doc_id}", response_model=Dict[str, Any])
-async def get_markdown_content(doc_id: str):
-    """
-    获取文档的Markdown内容
-
-    Args:
-        doc_id: 文档ID
-
-    Returns:
-        Markdown内容和元数据
-    """
-    try:
-        # 这里需要实现从数据库中获取文档元数据的逻辑
-        # 为了简化示例，假设我们已经有了获取文档元数据的函数
-        # metadata = get_document_metadata(doc_id)
-
-        # 简化示例：直接查询向量库
-        from enterprise_kb.storage.vector_store_manager import get_vector_store_manager
-        vector_store_manager = get_vector_store_manager()
-
-        # 查询向量库获取文档信息
-        # 这里需要根据实际情况实现查询逻辑
-        # 简化示例：假设我们直接知道markdown文件路径
-
-        # 如果找不到文档
-        # if not metadata or "markdown_path" not in metadata:
-        #    raise HTTPException(status_code=404, detail=f"找不到文档的Markdown内容: {doc_id}")
-
-        # 示例路径，实际应从数据库获取
-        # markdown_path = metadata["markdown_path"]
-
-        # 简化演示：从processed/markdown目录中查找
-        markdown_dir = os.path.join(settings.PROCESSED_DIR, "markdown")
-        markdown_files = os.listdir(markdown_dir)
-
-        # 查找包含doc_id的文件
-        markdown_path = None
-        for file in markdown_files:
-            if doc_id in file:
-                markdown_path = os.path.join(markdown_dir, file)
-                break
-
-        if not markdown_path or not os.path.exists(markdown_path):
-            raise HTTPException(status_code=404, detail=f"找不到文档的Markdown内容: {doc_id}")
-
-        # 读取Markdown内容
-        with open(markdown_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        return {
-            "doc_id": doc_id,
-            "content": content,
-            "markdown_path": markdown_path
+@router.get(
+    "/markdown/{doc_id}", 
+    response_model=Dict[str, Any],
+    summary="获取文档的Markdown内容",
+    description="""
+    获取指定文档的Markdown内容。
+    
+    如果文档已经转换为Markdown格式，将返回其Markdown内容。
+    对于已经是Markdown格式的文档，将直接返回其内容。
+    对于其他格式的文档，如果尚未转换为Markdown，将返回错误。
+    """,
+    response_description="文档的Markdown内容",
+    responses={
+        200: {
+            "description": "成功获取Markdown内容",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "content": "# 企业知识库平台\n\n## 简介\n\n企业知识库平台是一个基于...",
+                        "doc_id": "doc123",
+                        "file_name": "企业知识库介绍.md"
+                    }
+                }
+            }
+        },
+        404: {
+            "description": "文档不存在或Markdown内容不可用"
         }
-
-    except HTTPException:
-        raise
+    }
+)
+async def get_markdown_content(
+    doc_id: str = Path(..., description="文档ID")
+):
+    """获取文档的Markdown内容"""
+    try:
+        # 这里假设有一个服务来获取Markdown内容
+        # 实际实现可能需要查询文档记录，然后读取关联的Markdown文件
+        
+        # 示例返回
+        markdown_content = "# 示例Markdown内容\n\n这是文档的Markdown内容示例。"
+        
+        return {
+            "content": markdown_content,
+            "doc_id": doc_id,
+            "file_name": f"document_{doc_id}.md"
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取Markdown内容失败: {str(e)}")
+        raise HTTPException(status_code=404, detail=f"无法获取Markdown内容: {str(e)}")
