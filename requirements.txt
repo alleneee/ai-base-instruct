@@ -36,4 +36,4 @@ markitdown[all]
 # 异步任务处理
 celery>=5.3.1
 redis>=4.6.0
-flower>=2.0.1 
+flower>=2.0.1

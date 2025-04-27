@@ -12,6 +12,9 @@ from enterprise_kb.api.datasources import router as datasources_router
 from enterprise_kb.api.retrieval import router as retrieval_router
 from enterprise_kb.api.ragflow import router as ragflow_router
 from enterprise_kb.api.celery_tasks import router as celery_router
+from enterprise_kb.api.celery_tasks_v2 import router as celery_v2_router
+from enterprise_kb.api.query_rewriting import router as query_rewriting_router
+from enterprise_kb.api.document_segment_api import router as document_segment_router
 
 # 导入配置
 from enterprise_kb.core.config.settings import settings
@@ -51,7 +54,7 @@ async def add_process_time_header(request: Request, call_next):
         response = await call_next(request)
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = str(process_time)
-        
+
         # 记录请求信息
         logger.info(
             f"Path: {request.url.path} | "
@@ -66,7 +69,7 @@ async def add_process_time_header(request: Request, call_next):
             f"Method: {request.method} | "
             f"Error: {str(e)}"
         )
-        
+
         # 返回错误响应
         return JSONResponse(
             status_code=500,
@@ -78,7 +81,10 @@ app.include_router(documents_router, prefix=settings.API_PREFIX)
 app.include_router(datasources_router, prefix=settings.API_PREFIX)
 app.include_router(retrieval_router, prefix=settings.API_PREFIX)
 app.include_router(ragflow_router, prefix=settings.API_PREFIX)
+app.include_router(query_rewriting_router)  # 查询重写路由
 app.include_router(celery_router)
+app.include_router(celery_v2_router)  # 改进的Celery任务API
+app.include_router(document_segment_router)  # 文档分段处理API
 
 @app.get("/")
 async def root():
@@ -94,20 +100,20 @@ async def health_check():
 async def startup_event():
     """应用启动事件处理"""
     logger.info("应用启动...")
-    
+
     # 在这里可以添加应用启动时的初始化代码
     # 例如：初始化数据库连接、加载默认数据源等
-    
+
     logger.info(f"{settings.APP_NAME}已成功启动")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭事件处理"""
     logger.info("应用关闭...")
-    
+
     # 在这里可以添加应用关闭时的清理代码
     # 例如：关闭数据库连接、释放资源等
-    
+
     logger.info(f"{settings.APP_NAME}已安全关闭")
 
 # 直接运行该文件时启动服务
@@ -117,4 +123,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=settings.DEBUG
-    ) 
+    )

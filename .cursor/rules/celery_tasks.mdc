@@ -3,3 +3,68 @@ description:
 globs:
 alwaysApply: false
 ---
+# Celery 异步任务处理系统
+
+本项目使用 Celery 实现了一套完整的异步任务处理系统，用于处理文档处理、索引更新等耗时操作。以下是相关的关键文件和概念。
+
+## 核心配置文件
+
+- **Celery应用定义**: [enterprise_kb/core/celery_app.py](mdc:enterprise_kb/core/celery_app.py)
+  - 创建并配置Celery应用实例
+  - 配置任务队列和路由
+  - 定义任务的默认行为
+
+- **Celery配置**: [enterprise_kb/core/config/celeryconfig.py](mdc:enterprise_kb/core/config/celeryconfig.py)
+  - 定义Broker和Backend连接
+  - 配置任务的超时时间和重试策略
+  - 配置计划任务
+
+## 主要任务模块
+
+- **文档处理任务**: [enterprise_kb/services/document/tasks.py](mdc:enterprise_kb/services/document/tasks.py)
+  - `process_document`: 处理单个文档
+  - `batch_process_documents`: 批量处理多个文档
+  - `purge_document`: 清除文档（从索引和存储中删除）
+
+- **索引任务**: [enterprise_kb/services/index/tasks.py](mdc:enterprise_kb/services/index/tasks.py)
+  - `index_document`: 索引单个文档
+  - `reindex_collection`: 重新索引整个集合
+  - `delete_document_from_index`: 从索引中删除文档
+
+- **通用维护任务**: [enterprise_kb/services/common_tasks.py](mdc:enterprise_kb/services/common_tasks.py)
+  - 系统维护相关的任务
+  - 清理临时文件和优化索引
+
+## 任务队列
+
+- **processing**: 用于文档处理任务
+- **indexing**: 用于索引管理任务
+- **default**: 用于其他任务
+
+## 任务特性
+
+- **绑定任务**: 使用`bind=True`创建的任务可以访问任务实例
+- **自动重试**: 配置`max_retries`和`default_retry_delay`实现任务失败自动重试
+- **进度跟踪**: 使用`update_state`更新任务进度
+- **回调处理**: 使用`on_success`和`on_failure`处理任务完成事件
+
+## API集成
+
+- **Celery API**: [enterprise_kb/api/celery_tasks.py](mdc:enterprise_kb/api/celery_tasks.py)
+  - 提交文档处理任务
+  - 获取任务状态
+  - 批量处理和清理操作
+
+## 启动脚本
+
+- **Celery启动脚本**: [enterprise_kb/scripts/start_celery.py](mdc:enterprise_kb/scripts/start_celery.py)
+  - 启动Celery工作节点
+  - 启动Flower监控面板
+
+## 最佳实践
+
+- 分离不同类型的任务到专用队列
+- 为耗时任务设置适当的超时时间
+- 使用任务ID跟踪文档处理状态
+- 配置适当的重试策略处理暂时性错误
+- 使用`countdown`和`eta`参数调度延迟任务
