@@ -1,5 +1,8 @@
 """
 测试Milvus向量数据库的CRUD功能
+
+注意：此文件的测试内容已被集成到标准测试套件中 tests/core/test_milvus_integration.py
+建议使用标准测试套件进行完整测试，此文件仅作为快速独立测试使用。
 """
 import asyncio
 import os
