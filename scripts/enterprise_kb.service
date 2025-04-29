@@ -1,0 +1,30 @@
+[Unit]
+Description=企业知识库平台 - FastAPI服务
+After=network.target
+
+[Service]
+# 环境变量配置 - 根据需要替换项目目录和日志目录
+Environment="LOG_LEVEL=info"
+Environment="TIMEOUT=120"
+Environment="WORKERS_PER_CORE=1"
+Environment="MAX_WORKERS=8"
+
+# 用户和组设置 - 根据需要调整用户名
+User=www-data
+Group=www-data
+
+# 工作目录 - 需要替换为实际项目路径
+WorkingDirectory=/path/to/enterprise_kb
+ExecStart=/bin/bash /path/to/enterprise_kb/scripts/start_production.sh
+
+# 服务行为配置
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# 开放文件限制
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target 
