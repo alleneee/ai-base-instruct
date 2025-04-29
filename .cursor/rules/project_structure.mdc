@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: 项目结构总览
+globs: 
 alwaysApply: false
 ---
 # 项目结构总览
@@ -64,3 +64,45 @@ alwaysApply: false
 - 使用类型注解提高代码可读性
 - 实现单元测试和文档
 - 使用依赖注入实现松耦合
+
+# 企业知识库平台项目结构
+
+## 项目概述
+这是一个企业知识库平台项目，使用FastAPI构建，支持文档处理、向量检索和问答功能。项目支持多种AI模型提供商，包括OpenAI和DashScope。
+
+## 核心配置
+- 主要配置文件: [enterprise_kb/core/config/settings.py](mdc:enterprise_kb/core/config/settings.py)
+- 环境变量示例: [.env.example](mdc:.env.example)
+
+## 模型提供商集成
+项目支持两种主要的模型提供商:
+1. **OpenAI** - 默认提供商
+2. **DashScope** - 阿里云提供的替代模型
+
+### 切换模型提供商
+在`.env`文件中设置以下环境变量来选择模型提供商:
+```
+EMBEDDING_PROVIDER="dashscope" # 或 "openai"
+LLM_PROVIDER="dashscope" # 或 "openai"
+```
+
+### 关键实现文件
+- 模型配置: [enterprise_kb/core/config/settings.py](mdc:enterprise_kb/core/config/settings.py)
+- 文档处理器: [enterprise_kb/storage/document_processor.py](mdc:enterprise_kb/storage/document_processor.py)
+- Milvus向量存储: [enterprise_kb/storage/datasource/milvus.py](mdc:enterprise_kb/storage/datasource/milvus.py)
+- 混合检索: [enterprise_kb/core/hybrid_retrieval.py](mdc:enterprise_kb/core/hybrid_retrieval.py)
+
+## 测试结构
+- DashScope直接测试: [tests/core/test_dashscope_direct.py](mdc:tests/core/test_dashscope_direct.py)
+- DashScope集成测试: [tests/core/test_dashscope_integration.py](mdc:tests/core/test_dashscope_integration.py)
+
+## 重要API参数
+- DashScope Embedding模型使用`model_name`参数 (不是`model`)
+- DashScope LLM模型使用`model_name`参数 (不是`model`)
+- OpenAI模型使用`model`参数
+
+## 向量维度配置
+默认向量维度设置为1536，与DashScope和OpenAI的默认嵌入维度一致。如果更改模型，需要确保维度匹配:
+```python
+MILVUS_DIMENSION: int = 1536  # 默认嵌入向量维度
+```

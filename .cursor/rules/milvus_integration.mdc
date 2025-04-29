@@ -1,0 +1,69 @@
+---
+description: Milvus向量数据库集成指南
+globs: 
+alwaysApply: false
+---
+# Milvus向量数据库集成指南
+
+## Milvus简介
+Milvus是一个开源向量数据库，专为嵌入向量检索设计。在企业知识库平台中，Milvus用于存储和检索文档嵌入向量。
+
+## 配置参数
+Milvus配置参数位于 [enterprise_kb/core/config/settings.py](mdc:enterprise_kb/core/config/settings.py) 中：
+
+```python
+# Milvus配置
+MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
+MILVUS_PORT: int = int(os.getenv("MILVUS_PORT", "19530"))
+MILVUS_COLLECTION: str = os.getenv("MILVUS_COLLECTION", "enterprise_kb")
+MILVUS_DIMENSION: int = 1536  # 默认嵌入向量维度
+
+# Milvus新配置
+MILVUS_URI: str = f"http://{MILVUS_HOST}:{MILVUS_PORT}"
+MILVUS_USER: str = os.getenv("MILVUS_USER", "")
+MILVUS_PASSWORD: str = os.getenv("MILVUS_PASSWORD", "")
+MILVUS_TEXT_FIELD: str = os.getenv("MILVUS_TEXT_FIELD", "text")
+MILVUS_EMBEDDING_FIELD: str = os.getenv("MILVUS_EMBEDDING_FIELD", "embedding")
+MILVUS_METADATA_FIELD: str = os.getenv("MILVUS_METADATA_FIELD", "metadata")
+MILVUS_ID_FIELD: str = os.getenv("MILVUS_ID_FIELD", "id")
+
+# Milvus索引管理设置
+MILVUS_INDEX_MANAGEMENT: str = os.getenv("MILVUS_INDEX_MANAGEMENT", "CREATE_IF_NOT_EXISTS")  # 可选：NO_VALIDATION, CREATE_IF_NOT_EXISTS
+MILVUS_OVERWRITE: bool = os.getenv("MILVUS_OVERWRITE", "False").lower() in ("true", "1", "yes")
+```
+
+## 核心实现文件
+Milvus集成的核心文件为 [enterprise_kb/storage/datasource/milvus.py](mdc:enterprise_kb/storage/datasource/milvus.py)，该文件定义了与Milvus交互的所有方法。
+
+## 向量维度
+默认向量维度为1536，这适用于：
+- OpenAI的text-embedding-3-small和text-embedding-3-large模型
+- DashScope的text-embedding-v2模型
+
+如果使用不同维度的嵌入模型，需要相应地调整`MILVUS_DIMENSION`设置。
+
+## 集合管理
+Milvus集合在应用启动时根据`MILVUS_INDEX_MANAGEMENT`设置自动管理：
+- `CREATE_IF_NOT_EXISTS` - 如果集合不存在则创建（默认）
+- `NO_VALIDATION` - 不检查集合是否存在
+
+## 混合检索
+[enterprise_kb/core/hybrid_retrieval.py](mdc:enterprise_kb/core/hybrid_retrieval.py) 文件实现了基于Milvus的混合检索功能，结合了向量检索和关键词匹配。
+
+## 文档处理与向量存储
+文档处理流程在 [enterprise_kb/storage/document_processor.py](mdc:enterprise_kb/storage/document_processor.py) 中实现：
+1. 读取文档并提取文本
+2. 将文本分割成块
+3. 为每个块生成嵌入向量
+4. 将向量存储到Milvus
+
+## 更换嵌入模型时的注意事项
+更换嵌入模型时（例如从OpenAI切换到DashScope）：
+1. 如果新模型的向量维度不同，需要清空并重建Milvus集合
+2. 设置`MILVUS_OVERWRITE=true`强制重建集合
+3. 确保`MILVUS_DIMENSION`设置与新模型输出的向量维度匹配
+
+## 常见问题
+- 集合创建失败：检查Milvus服务是否运行，连接参数是否正确
+- 查询结果不准确：可能需要调整向量相似度阈值或重建索引
+- 性能问题：考虑增加Milvus分片数或调整查询参数
