@@ -1,8 +1,9 @@
 import os
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from pydantic import validator, Field, AnyHttpUrl, ConfigDict
+import logging
 
 class Settings(BaseSettings):
     # 应用配置
@@ -13,6 +14,20 @@ class Settings(BaseSettings):
     # LlamaIndex配置
     LLAMA_INDEX_CHUNK_SIZE: int = 1024
     LLAMA_INDEX_CHUNK_OVERLAP: int = 20
+
+    # 模型提供商配置
+    EMBEDDING_PROVIDER: Literal["openai", "dashscope"] = os.getenv("EMBEDDING_PROVIDER", "openai")
+    LLM_PROVIDER: Literal["openai", "dashscope"] = os.getenv("LLM_PROVIDER", "openai")
+    
+    # OpenAI配置
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_EMBED_MODEL_NAME: str = os.getenv("OPENAI_EMBED_MODEL_NAME", "text-embedding-3-small")
+    OPENAI_CHAT_MODEL_NAME: str = os.getenv("OPENAI_CHAT_MODEL_NAME", "gpt-3.5-turbo")
+    
+    # DashScope配置
+    DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
+    DASHSCOPE_EMBED_MODEL_NAME: str = os.getenv("DASHSCOPE_EMBED_MODEL_NAME", "text-embedding-v2")
+    DASHSCOPE_CHAT_MODEL_NAME: str = os.getenv("DASHSCOPE_CHAT_MODEL_NAME", "qwen-max")
 
     # Milvus配置
     MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
@@ -183,6 +198,55 @@ def get_settings() -> Settings:
     
     # 强制设置 DATABASE_URL 为 MYSQL_URL
     settings_instance.DATABASE_URL = settings_instance.MYSQL_URL
+    
+    # 初始化LlamaIndex配置
+    try:
+        from llama_index.core import Settings as LlamaSettings
+        
+        # 设置 Chunk 大小和重叠
+        LlamaSettings.chunk_size = settings_instance.LLAMA_INDEX_CHUNK_SIZE
+        LlamaSettings.chunk_overlap = settings_instance.LLAMA_INDEX_CHUNK_OVERLAP
+        
+        # 配置嵌入模型
+        if settings_instance.EMBEDDING_PROVIDER == "openai":
+            from llama_index.embeddings.openai import OpenAIEmbedding
+            LlamaSettings.embed_model = OpenAIEmbedding(
+                model=settings_instance.OPENAI_EMBED_MODEL_NAME,
+                api_key=settings_instance.OPENAI_API_KEY
+            )
+            logging.info(f"已配置OpenAI嵌入模型: {settings_instance.OPENAI_EMBED_MODEL_NAME}")
+        elif settings_instance.EMBEDDING_PROVIDER == "dashscope":
+            from llama_index.embeddings.dashscope import DashScopeEmbedding
+            LlamaSettings.embed_model = DashScopeEmbedding(
+                model_name=settings_instance.DASHSCOPE_EMBED_MODEL_NAME,
+                api_key=settings_instance.DASHSCOPE_API_KEY
+            )
+            logging.info(f"已配置DashScope嵌入模型: {settings_instance.DASHSCOPE_EMBED_MODEL_NAME}")
+        else:
+            logging.error(f"不支持的嵌入模型提供商: {settings_instance.EMBEDDING_PROVIDER}")
+        
+        # 配置LLM模型
+        if settings_instance.LLM_PROVIDER == "openai":
+            from llama_index.llms.openai import OpenAI
+            LlamaSettings.llm = OpenAI(
+                model=settings_instance.OPENAI_CHAT_MODEL_NAME,
+                api_key=settings_instance.OPENAI_API_KEY
+            )
+            logging.info(f"已配置OpenAI LLM模型: {settings_instance.OPENAI_CHAT_MODEL_NAME}")
+        elif settings_instance.LLM_PROVIDER == "dashscope":
+            from llama_index.llms.dashscope import DashScope
+            LlamaSettings.llm = DashScope(
+                model_name=settings_instance.DASHSCOPE_CHAT_MODEL_NAME,
+                api_key=settings_instance.DASHSCOPE_API_KEY
+            )
+            logging.info(f"已配置DashScope LLM模型: {settings_instance.DASHSCOPE_CHAT_MODEL_NAME}")
+        else:
+            logging.error(f"不支持的LLM模型提供商: {settings_instance.LLM_PROVIDER}")
+            
+    except ImportError as e:
+        logging.error(f"初始化LlamaIndex配置失败: {str(e)}")
+    except Exception as e:
+        logging.error(f"配置LlamaIndex模型时出错: {str(e)}")
     
     return settings_instance
 
