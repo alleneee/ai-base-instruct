@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     )
 
     # 缓存配置 (15分钟)
-    CACHE_EXPIRE: int = 60 * 15
+    CACHE_EXPIRE: int = 900
 
     # API限流配置
     RATE_LIMIT_SECOND: int = 10  # 每秒请求数量限制

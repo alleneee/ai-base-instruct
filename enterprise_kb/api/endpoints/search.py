@@ -1,75 +1,92 @@
-"""搜索端点模块"""
+"""搜索API路由模块"""
 import logging
-from typing import List
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional, List
 
-from enterprise_kb.core.auth import User, current_active_user
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from enterprise_kb.api.dependencies import (
+    SearchSvc, UserWithReadPerm, PaginationDep, response
+)
+from enterprise_kb.core.limiter import limiter_search
 from enterprise_kb.core.cache import cached
-from enterprise_kb.core.limiter import default_rate_limiter
-from enterprise_kb.db.session import get_async_session
-from enterprise_kb.schemas.search import SearchRequest, SearchResponse
-from enterprise_kb.schemas.auth import ErrorResponse
-from enterprise_kb.services.search_service import SearchService
+from enterprise_kb.models.schemas import SearchQuery, SearchResult
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/search",
-    tags=["知识检索"],
+    tags=["搜索服务"],
     responses={
-        500: {"model": ErrorResponse, "description": "服务器内部错误"}
+        404: {"description": "未找到资源"},
+        500: {"description": "服务器内部错误"}
     }
 )
 
+class SearchFilters(BaseModel):
+    """搜索过滤器"""
+    source_id: Optional[str] = None
+    file_type: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    is_relevant_only: bool = False
+
 @router.post(
     "",
-    response_model=SearchResponse,
-    summary="知识检索",
-    description="根据查询文本检索相关知识",
-    dependencies=[Depends(default_rate_limiter)]
+    response_model=SearchResult,
+    summary="语义搜索",
+    description="通过语义搜索查询文档"
 )
-@cached(expire=60 * 5)  # 缓存5分钟
-async def search(
-    search_request: SearchRequest,
-    user: User = Depends(current_active_user)
+@limiter_search
+@cached(expire=30)  # 缓存30秒
+async def semantic_search(
+    query: SearchQuery,
+    filters: Optional[SearchFilters] = None,
+    pagination: PaginationDep = Depends(),
+    search_service: SearchSvc = Depends(),
+    user: UserWithReadPerm = Depends()
 ):
-    """执行知识检索"""
+    """语义搜索接口"""
     try:
-        service = SearchService()
-        result = await service.search(search_request)
-        return result
+        filters_dict = {}
+        if filters:
+            filters_dict = filters.dict(exclude_none=True)
+            
+        results = await search_service.search(
+            query=query.query,
+            user_id=str(user.id),
+            limit=pagination.size,
+            offset=(pagination.page - 1) * pagination.size,
+            **filters_dict
+        )
+        
+        return results
     except Exception as e:
-        logger.error(f"检索失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"检索失败: {str(e)}")
-
+        logger.error(f"搜索操作失败: {str(e)}")
+        return response.error(message=f"搜索操作失败: {str(e)}", status_code=500)
+        
 @router.get(
-    "/datasources",
+    "/related",
     response_model=List[str],
-    summary="获取所有可用的数据源",
-    description="返回系统中所有已配置的数据源名称列表"
+    summary="获取相关问题",
+    description="根据输入的问题获取相关的问题建议"
 )
-async def list_datasources(
-    user: User = Depends(current_active_user)
+@cached(expire=60)  # 缓存60秒
+async def get_related_questions(
+    question: str,
+    limit: int = 5,
+    search_service: SearchSvc = Depends(),
+    user: UserWithReadPerm = Depends()
 ):
-    """获取所有可用的数据源"""
+    """获取相关问题建议"""
     try:
-        service = SearchService()
-        return await service.list_datasources()
+        results = await search_service.get_related_questions(
+            query=question,
+            user_id=str(user.id),
+            limit=limit
+        )
+        
+        return results
     except Exception as e:
-        logger.error(f"获取数据源列表失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"获取数据源列表失败: {str(e)}")
-
-@router.get(
-    "/health",
-    summary="检索服务健康检查",
-    description="检查检索服务是否正常运行"
-)
-async def health_check():
-    """检索服务健康检查"""
-    try:
-        # 这里可以添加实际的健康检查逻辑
-        return {"status": "ok", "message": "检索服务正常运行"}
-    except Exception as e:
-        logger.error(f"健康检查失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"健康检查失败: {str(e)}") 
+        logger.error(f"获取相关问题失败: {str(e)}")
+        return response.error(message=f"获取相关问题失败: {str(e)}", status_code=500) 

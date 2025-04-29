@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     DASHSCOPE_CHAT_MODEL_NAME: str = os.getenv("DASHSCOPE_CHAT_MODEL_NAME", "qwen-plus")
 
     # 缓存配置
-    CACHE_EXPIRE: int = int(os.getenv("CACHE_EXPIRE", "900"))  # 15分钟 in seconds
+    CACHE_EXPIRE: int = 900
     
     # API限流配置
     RATE_LIMIT_SECOND: int = int(os.getenv("RATE_LIMIT_SECOND", "10")) # 每秒请求数量限制
