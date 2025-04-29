@@ -18,19 +18,18 @@ from enterprise_kb.api.celery_tasks_v2 import router as celery_v2_router
 from enterprise_kb.api.query_rewriting import router as query_rewriting_router
 from enterprise_kb.api.document_segment_api import router as document_segment_router
 from enterprise_kb.api.vector_store import router as vector_store_router  # 添加向量数据库路由
+from enterprise_kb.api.auth import router as auth_router  # 添加认证路由
 
 # 导入配置
 from enterprise_kb.core.config.settings import settings
 # 导入缓存和限速设置
 from enterprise_kb.core.cache import setup_cache
 from enterprise_kb.core.limiter import setup_limiter
+from enterprise_kb.core.config.logging import configure_logging, get_logger
 
-# 配置日志
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format=settings.LOG_FORMAT
-)
-logger = logging.getLogger(__name__)
+# 配置统一日志
+configure_logging()
+logger = get_logger(__name__)
 
 # 定义应用生命周期上下文管理器
 @asynccontextmanager
@@ -149,15 +148,20 @@ async def general_exception_handler(request, exc):
         }
     )
 
+# 注册 JWT 异常处理器
+from enterprise_kb.core.auth.jwt import register_exception_handler
+register_exception_handler(app)
+
 # 注册路由
 app.include_router(documents_router, prefix=settings.API_PREFIX)
 app.include_router(datasources_router, prefix=settings.API_PREFIX)
 app.include_router(retrieval_router, prefix=settings.API_PREFIX)
-app.include_router(query_rewriting_router)  # 查询重写路由
-app.include_router(celery_router)
+app.include_router(celery_router, prefix=settings.API_PREFIX)
+app.include_router(query_rewriting_router, prefix=settings.API_PREFIX)
 app.include_router(celery_v2_router)  # 改进的Celery任务API
 app.include_router(document_segment_router)  # 文档分段处理API
 app.include_router(vector_store_router, prefix=settings.API_PREFIX)  # 注册向量数据库路由
+app.include_router(auth_router, prefix=settings.API_PREFIX)  # 注册认证路由
 
 @app.get("/", 
     tags=["系统状态"], 

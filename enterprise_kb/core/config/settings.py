@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
     DEBUG: bool = False
 
+    # JWT配置
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-please-change-in-production")
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE: int = 60 * 30  # 30分钟
+    JWT_REFRESH_TOKEN_EXPIRE: int = 60 * 60 * 24 * 30  # 30天
+    PRODUCTION: bool = os.getenv("ENVIRONMENT", "development") == "production"
+
     # LlamaIndex配置
     LLAMA_INDEX_CHUNK_SIZE: int = 1024
     LLAMA_INDEX_CHUNK_OVERLAP: int = 20
