@@ -2,6 +2,8 @@
 import logging
 from typing import Any, Dict, List, Optional, Type, ClassVar, Tuple, Union
 from pydantic import Field
+import asyncio
+import json
 
 from llama_index.core.schema import TextNode, NodeWithScore, BaseNode
 from llama_index.vector_stores.milvus import MilvusVectorStore, IndexManagement
@@ -10,7 +12,11 @@ from pymilvus import Collection, utility, connections, RRFRanker
 from enterprise_kb.storage.datasource.base import DataSource, DataSourceConfig
 from enterprise_kb.storage.datasource.registry import register_datasource
 from enterprise_kb.core.config.settings import settings
-from enterprise_kb.utils.milvus_client import get_milvus_client
+from enterprise_kb.utils.milvus_client import get_milvus_client, MilvusClient
+from enterprise_kb.storage.pool.milvus_pool import (
+    get_milvus_pool, get_milvus_batch_inserter, 
+    get_milvus_batch_deleter, get_milvus_batch_updater
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,10 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
         self.vector_store = None
         self.collection = None  # 添加集合对象引用
         self._connected = False  # 添加连接状态标志
+        self._connection_pool = get_milvus_pool()  # 获取连接池
+        self._batch_inserter = get_milvus_batch_inserter()  # 批量插入器
+        self._batch_deleter = get_milvus_batch_deleter()  # 批量删除器
+        self._batch_updater = get_milvus_batch_updater()  # 批量更新器
     
     @classmethod
     def get_config_class(cls) -> Type[MilvusDataSourceConfig]:
@@ -53,7 +63,10 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
         return cls._config_class
     
     def _initialize(self) -> None:
-        """初始化Milvus客户端"""
+        """初始化Milvus向量存储
+        
+        注意：现在已经不在这里创建客户端，而是在connect()方法中从连接池获取
+        """
         try:
             # 初始化Milvus向量存储
             uri = self.config.uri
@@ -77,11 +90,8 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
                 overwrite=settings.MILVUS_OVERWRITE
             )
             
-            # 获取Milvus客户端
-            self._client = get_milvus_client()
-            
             # 如果集合存在，加载集合
-            if utility.has_collection(self.config.collection_name):
+            if self._client and utility.has_collection(self.config.collection_name):
                 self.collection = Collection(self.config.collection_name)
             
             logger.info(f"成功初始化Milvus向量存储: {uri}")
@@ -90,40 +100,55 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
             raise ValueError(f"初始化Milvus数据源失败: {str(e)}")
     
     async def connect(self) -> None:
-        """连接到Milvus服务器"""
+        """连接到Milvus服务器
+        
+        使用连接池获取连接，而不是每次都创建新连接
+        """
         if not self._client or not self._connected:
             try:
+                # 从连接池获取客户端而不是每次都创建新的
+                loop = asyncio.get_event_loop()
+                self._client = await loop.run_in_executor(None, self._connection_pool.get_connection)
+                
+                # 初始化向量存储
                 self._initialize()
-                # 如果集合存在，加载到内存
-                if self.collection:
-                    self.collection.load()
                 self._connected = True
-                logger.info(f"成功连接到Milvus数据源: {self.config.uri}")
+                logger.info(f"已连接到Milvus服务器: {self.config.uri}")
             except Exception as e:
-                self._connected = False
-                logger.error(f"连接Milvus数据源失败: {str(e)}")
-                raise
+                logger.error(f"连接到Milvus服务器失败: {str(e)}")
+                raise ValueError(f"连接到Milvus服务器失败: {str(e)}")
     
     async def disconnect(self) -> None:
-        """断开与Milvus服务器的连接"""
-        try:
-            if self.collection:
-                try:
-                    self.collection.release()
-                except Exception as inner_e:
-                    logger.warning(f"释放Milvus集合资源异常: {str(inner_e)}")
+        """断开与Milvus服务器的连接
+        
+        将连接放回连接池而不是关闭它
+        """
+        if self._client and self._connected:
+            try:
+                # 释放集合资源
+                if self.collection:
+                    try:
+                        self.collection.release()
+                    except Exception as e:
+                        logger.warning(f"释放集合资源异常: {str(e)}")
+                    self.collection = None
                 
-            if self._client:
-                # pymilvus会自动管理连接，我们只需要释放引用
-                self._client.close()
-                self._client = None
+                # 释放向量存储资源
                 self.vector_store = None
-                self.collection = None
+                
+                # 将客户端归还连接池，而不是关闭
+                try:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, self._connection_pool.release_connection, self._client)
+                except Exception as e:
+                    logger.warning(f"归还Milvus连接异常: {str(e)}")
+                
+                self._client = None
                 self._connected = False
-                logger.info("已断开与Milvus数据源的连接")
-        except Exception as e:
-            logger.error(f"断开Milvus数据源连接失败: {str(e)}")
-
+                logger.info("已断开与Milvus服务器的连接")
+            except Exception as e:
+                logger.error(f"断开与Milvus服务器的连接失败: {str(e)}")
+    
     async def add_documents(self, nodes: List[BaseNode]) -> List[str]:
         """添加文档到Milvus
         
@@ -151,7 +176,7 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
             raise ValueError(f"添加文档失败: {str(e)}")
     
     async def batch_add_documents(self, nodes: List[BaseNode], batch_size: int = 100) -> List[str]:
-        """批量添加文档到Milvus，分批处理减少内存消耗
+        """批量添加文档到Milvus，使用批处理器提高性能
         
         Args:
             nodes: 文档节点列表
@@ -163,25 +188,42 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
         Raises:
             ValueError: 添加失败
         """
-        if not self.vector_store:
-            await self.connect()
-            if not self.vector_store:
-                raise ValueError("Milvus数据源未连接")
+        if not nodes:
+            return []
             
         try:
-            all_node_ids = []
+            # 准备批量数据
+            batch_data = []
+            for node in nodes:
+                # 获取向量
+                embedding = node.embedding
+                if embedding is None:
+                    logger.warning(f"节点 {node.id_} 没有向量，跳过")
+                    continue
+                    
+                # 构建数据项
+                data_item = {
+                    "doc_id": node.id_,
+                    "chunk_id": getattr(node, "chunk_id", ""),
+                    "text": node.text,
+                    "vector": embedding,
+                    "metadata": node.metadata or {}
+                }
+                batch_data.append(data_item)
             
-            # 分批处理
-            for i in range(0, len(nodes), batch_size):
-                batch = nodes[i:i+batch_size]
-                batch_ids = self.vector_store.add(batch)
-                all_node_ids.extend(batch_ids)
-                logger.info(f"成功添加第 {i//batch_size + 1} 批数据 ({len(batch)} 条) 到Milvus")
-                
-            logger.info(f"批量添加完成，总共添加 {len(all_node_ids)} 条数据")
-            return all_node_ids
+            # 使用批处理器添加文档
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._batch_inserter.add_batch, batch_data)
+            
+            # 等待所有数据处理完成
+            await self._batch_inserter.async_flush()
+            
+            # 返回添加成功的节点ID列表
+            result_ids = [item["doc_id"] for item in batch_data]
+            logger.info(f"批量添加文档完成，共添加 {len(result_ids)} 个文档")
+            return result_ids
         except Exception as e:
-            logger.error(f"批量添加文档到Milvus失败: {str(e)}")
+            logger.error(f"批量添加文档失败: {str(e)}")
             raise ValueError(f"批量添加文档失败: {str(e)}")
     
     async def update_document(self, doc_id: str, node: BaseNode) -> bool:
@@ -218,49 +260,59 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
             raise ValueError(f"Upsert 文档失败 (doc_id: {doc_id}): {str(e)}")
     
     async def batch_update_documents(self, updates: List[Tuple[str, BaseNode]], batch_size: int = 100) -> Dict[str, bool]:
-        """批量更新/插入文档 (通过Upsert实现)
+        """批量更新/插入文档，使用批处理器提高性能
 
         Args:
             updates: 元组列表，每个元组包含 (doc_id, new_node).
                      new_node 必须包含 embedding.
-            batch_size: 传递给 batch_add_documents 的批量大小.
+            batch_size: 批量大小
 
         Returns:
-            文档ID及其操作结果的字典 (如果batch_add_documents成功，则都为True).
+            文档ID及其更新结果的字典
 
         Raises:
             ValueError: 更新失败或数据源未连接.
         """
-        if not self.vector_store:
-            await self.connect()
-            if not self.vector_store:
-                raise ValueError("Milvus数据源未连接")
-
-        nodes_to_upsert = []
-        results = {}
+        if not updates:
+            return {}
+        
         try:
-            # 1. 准备所有要 upsert 的节点
+            # 准备批量更新数据
+            batch_data = []
             for doc_id, node in updates:
-                # 设置节点ID为主键
-                node.id_ = doc_id
-                nodes_to_upsert.append(node)
-                # Assume success unless batch_add throws an error
-                results[doc_id] = True 
-
-            # 2. 调用批量添加 (add -> upsert)
-            if nodes_to_upsert:
-                await self.batch_add_documents(nodes_to_upsert, batch_size=batch_size)
-                logger.info(f"成功批量 Upsert {len(nodes_to_upsert)} 个文档")
-            else:
-                logger.warning("批量 Upsert 没有提供有效节点")
-
+                # 获取向量
+                embedding = node.embedding
+                if embedding is None:
+                    logger.warning(f"节点 {node.id_} 没有向量，跳过")
+                    continue
+                    
+                # 构建数据项
+                data_item = {
+                    "doc_id": node.id_,
+                    "chunk_id": getattr(node, "chunk_id", ""),
+                    "text": node.text,
+                    "vector": embedding,
+                    "metadata": node.metadata or {}
+                }
+                batch_data.append((doc_id, data_item))
+            
+            # 使用批处理器更新文档
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._batch_updater.add_batch, batch_data)
+            
+            # 等待所有数据处理完成
+            results = await self._batch_updater.async_flush()
+            
+            # 如果结果为空，创建默认结果
+            if not results:
+                results = {doc_id: True for doc_id, _ in batch_data}
+                
+            success_count = sum(1 for success in results.values() if success)
+            logger.info(f"批量更新文档完成，共成功更新 {success_count}/{len(updates)} 个文档")
             return results
         except Exception as e:
-            logger.exception(f"批量 Upsert Milvus 文档失败: {str(e)}")
-            # Mark all as failed on exception
-            for doc_id, _ in updates:
-                 results[doc_id] = False
-            raise ValueError(f"批量 Upsert 文档失败: {str(e)}")
+            logger.error(f"批量更新文档失败: {str(e)}")
+            raise ValueError(f"批量更新文档失败: {str(e)}")
     
     async def delete_document(self, doc_id: str) -> bool:
         """删除文档
@@ -274,36 +326,32 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
         Raises:
             ValueError: 删除失败
         """
-        if not self.vector_store or not self._client:
-            # Deletion might still require the client if vector_store.delete is not used or sufficient
-            # Let's ensure connection and client exist for deletion logic below
-             await self.connect()
-             if not self.vector_store or not self._client or not self.collection:
-                 raise ValueError("Milvus数据源未连接或初始化失败")
-
+        if not doc_id:
+            return False
+            
         try:
-            # Option 1: Use LlamaIndex vector_store delete if it maps correctly
-            # self.vector_store.delete(ref_doc_id=doc_id) # Check LlamaIndex documentation for exact method/params
-
-            # Option 2: Use direct pymilvus client delete (more reliable control)
-            # Requires the collection object to be loaded.
-            expr = f"{self.config.id_field} == '{doc_id}'" # Assuming id_field is the primary key field name
-            logger.debug(f"Attempting to delete document using expr: {expr}")
-            delete_result = self.collection.delete(expr=expr)
-            # delete_result might be DeleteResult object or similar, check pymilvus docs
-            # For simplicity, let's assume success if no exception
-            # We might not know the exact count if multiple segments are involved before compaction.
-            logger.info(f"删除文档 (doc_id: {doc_id}) 操作已执行 (可能需要时间生效)")
-            # Milvus delete is often asynchronous in effect due to compaction.
-            # Returning True indicates the command was sent.
-            return True
-
+            # 使用批处理器删除单个文档
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._batch_deleter.add, doc_id)
+            
+            # 强制立即刷新处理
+            results = await self._batch_deleter.async_flush()
+            
+            # 解析结果
+            success = results.get(doc_id, True) if results else True
+            
+            if success:
+                logger.info(f"成功删除文档 {doc_id}")
+            else:
+                logger.warning(f"文档 {doc_id} 删除失败或不存在")
+                
+            return success
         except Exception as e:
-            logger.exception(f"删除Milvus文档失败 (doc_id: {doc_id}): {str(e)}")
+            logger.error(f"删除文档失败 (doc_id: {doc_id}): {str(e)}")
             raise ValueError(f"删除文档失败 (doc_id: {doc_id}): {str(e)}")
     
     async def batch_delete_documents(self, doc_ids: List[str]) -> Dict[str, bool]:
-        """批量删除文档
+        """批量删除文档，使用批处理器提高性能
         
         Args:
             doc_ids: 文档ID列表
@@ -314,33 +362,27 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
         Raises:
             ValueError: 删除失败
         """
-        if not self.vector_store or not self._client or not self.collection:
-             await self.connect()
-             if not self.vector_store or not self._client or not self.collection:
-                 raise ValueError("Milvus数据源未连接或初始化失败")
-
-        results = {doc_id: False for doc_id in doc_ids}
         if not doc_ids:
-            logger.warning("批量删除传入了空的文档ID列表")
-            return results
-
+            return {}
+            
         try:
-            # Use Milvus batch delete via expression
-            # Ensure IDs are properly formatted for the expression (e.g., strings quoted)
-            quoted_ids = [f"'{doc_id}'" for doc_id in doc_ids]
-            expr = f"{self.config.id_field} in [{','.join(quoted_ids)}]"
-            logger.debug(f"Attempting to batch delete documents using expr: {expr}")
-
-            delete_result = self.collection.delete(expr=expr)
-            # Assume success if command sent without error
-            for doc_id in doc_ids:
-                results[doc_id] = True
-            logger.info(f"批量删除 {len(doc_ids)} 个文档的操作已执行 (可能需要时间生效)")
+            # 使用批处理器删除文档
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._batch_deleter.add_batch, doc_ids)
+            
+            # 等待所有数据处理完成
+            results = await self._batch_deleter.async_flush()
+            
+            # 如果结果为空，创建默认结果
+            if not results:
+                results = {doc_id: True for doc_id in doc_ids}
+                
+            logger.info(f"批量删除文档完成，共删除 {len(doc_ids)} 个文档")
             return results
         except Exception as e:
-            logger.exception(f"批量删除Milvus文档失败: {str(e)}")
-            # Keep results as False on failure
-            raise ValueError(f"批量删除文档失败: {str(e)}")
+            logger.error(f"批量删除文档失败: {str(e)}")
+            # 所有项都标记为失败
+            return {doc_id: False for doc_id in doc_ids}
     
     async def search_documents(
         self,
@@ -356,32 +398,33 @@ class MilvusDataSource(DataSource[MilvusDataSourceConfig]):
             top_k: 返回的最大结果数.
             filter_expr: Milvus的标量过滤表达式.
             search_params: Milvus搜索参数.
-
+            
         Returns:
             匹配的文档节点列表及分数.
+            
+        Raises:
+            ValueError: 搜索失败.
         """
-        if not self.collection:
+        if not self._client:
             await self.connect()
-            if not self.collection:
-                raise ValueError("Milvus数据源未连接或集合不存在")
-
+                
         try:
-            default_search_params = {"metric_type": "L2", "params": {"ef": 10}}
-            current_search_params = default_search_params.copy()
-            if search_params:
-                current_search_params.update(search_params)
-
-            output_fields = [self.config.id_field, self.config.text_field, self.config.metadata_field]
-
-            search_args = {
-                "data": [query_vector],
-                "anns_field": self.config.embedding_field,
-                "param": current_search_params,
-                "limit": top_k,
-                "expr": filter_expr,
-                "output_fields": output_fields,
-            }
-
+            # 1. 验证向量维度
+            if len(query_vector) != self.config.dimension:
+                raise ValueError(f"查询向量维度不匹配: 预期 {self.config.dimension}, 实际 {len(query_vector)}")
+                
+            # 2. 确保向量存储已初始化
+            if not self.vector_store:
+                self._initialize()
+                
+            # 3. 使用连接池中的客户端执行搜索
+            result_nodes = self.vector_store.search(
+                query_embedding=query_vector,
+                similarity_top_k=top_k,
+                filters=self._parse_filter_expr(filter_expr) if filter_expr else None
+            )
+            
+            return result_nodes
             logger.debug(f"Executing Milvus native vector search with args: {search_args}")
             results = self.collection.search(**search_args)
 
