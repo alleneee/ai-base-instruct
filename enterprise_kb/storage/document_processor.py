@@ -643,10 +643,12 @@ class DocumentProcessor:
 
     def __init__(self):
         """初始化文档处理器"""
-        # 设置LlamaIndex的默认设置
-        Settings.embed_model = OpenAIEmbedding()
-        Settings.chunk_size = settings.CHUNK_SIZE
-        Settings.chunk_overlap = settings.CHUNK_OVERLAP
+        # 设置LlamaIndex的默认设置 - R E M O V E D (Handled by settings.py)
+        # Settings.embed_model = OpenAIEmbedding()
+        # Settings.chunk_size = settings.CHUNK_SIZE
+        # Settings.chunk_overlap = settings.CHUNK_OVERLAP
+        # Chunk size and overlap are now set globally in settings.py
+        # Ensure LlamaSettings are loaded from settings.py before this runs
 
         # 初始化MarkItDown转换器
         self.markitdown = MarkItDown(enable_plugins=True)

@@ -8,10 +8,12 @@ import random
 from llama_index.core import Settings
 from llama_index.core.schema import NodeWithScore, TextNode, BaseNode
 from llama_index.embeddings.openai import OpenAIEmbedding
+from sentence_transformers import CrossEncoder
 
 from enterprise_kb.core.keyword_search import KeywordSearchEngine
 from enterprise_kb.storage.vector_store_manager import get_vector_store_manager
 from enterprise_kb.core.config.settings import settings
+from enterprise_kb.storage.datasource.milvus import MilvusDataSource
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +30,8 @@ class HybridRetrievalEngine:
 
     def __init__(self):
         """初始化混合检索引擎"""
-        # 设置嵌入模型
-        Settings.embed_model = OpenAIEmbedding()
+        # 设置嵌入模型 - R E M O V E D (Handled by settings.py)
+        # Settings.embed_model = OpenAIEmbedding()
 
         # 获取向量存储管理器
         self.vector_store_manager = get_vector_store_manager()
@@ -43,6 +45,27 @@ class HybridRetrievalEngine:
 
         # 文档节点缓存
         self.nodes_cache = {}
+
+        # 初始化 Reranker 模型 (懒加载或预加载)
+        self.reranker_model_name = settings.RERANKER_MODEL_NAME
+        self.reranker_model = None
+        self.rerank_top_n = settings.RERANK_TOP_N
+        self._load_reranker()
+
+    def _load_reranker(self):
+        """加载 Reranker 模型"""
+        if not self.reranker_model and self.reranker_model_name:
+            try:
+                logger.info(f"Loading reranker model: {self.reranker_model_name}")
+                # Consider adding device='cuda' or device='mps' if GPU is available
+                self.reranker_model = CrossEncoder(self.reranker_model_name)
+                logger.info("Reranker model loaded successfully.")
+            except Exception as e:
+                logger.error(f"Failed to load reranker model '{self.reranker_model_name}': {e}", exc_info=True)
+                self.reranker_model = None # Ensure it's None if loading failed
+        elif not self.reranker_model_name:
+             logger.warning("RERANKER_MODEL_NAME is not set in settings. Reranking will be disabled.")
+             self.reranker_model = None
 
     async def index_documents(self, datasource_name: Optional[str] = None):
         """从向量存储中索引文档到关键词引擎
@@ -154,87 +177,118 @@ class HybridRetrievalEngine:
         search_type: SearchType = SearchType.HYBRID,
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
-        min_score: float = 0.7,
+        milvus_filter_expr: Optional[str] = None,
+        min_score: float = 0.0,
         datasource_names: Optional[List[str]] = None,
-        rerank: bool = True
+        rerank: bool = True # Default rerank to True if model is available
     ) -> List[NodeWithScore]:
         """执行检索
 
         Args:
             query: 查询文本
-            search_type: 搜索类型，可以是向量搜索、关键词搜索或混合搜索
-            top_k: 返回的最大结果数
-            filters: 过滤条件，例如 {"file_type": ".pdf"}
-            min_score: 最小相似度分数
-            datasource_names: 要查询的数据源名称列表，如果为None则查询所有数据源
-            rerank: 是否对结果重新排序
+            search_type: 搜索类型
+            top_k: 返回结果数量
+            filters: 应用层过滤条件 (LlamaIndex style) - 可能需要转换为milvus_filter_expr
+            milvus_filter_expr: Milvus原生过滤表达式 (e.g., "category == 'news'")
+            min_score: 最小分数阈值 (注意Milvus分数体系可能不同)
+            datasource_names: 目标数据源列表
+            rerank: 是否在检索后执行额外的应用层重排序 (通常不需要，因为Milvus有内置ranker)
 
         Returns:
             匹配文档列表
         """
         try:
-            # 根据搜索类型执行不同的检索策略
-            if search_type == SearchType.VECTOR:
-                # 只执行向量搜索
-                return await self._vector_search(
-                    query=query,
-                    top_k=top_k,
-                    filters=filters,
-                    min_score=min_score,
-                    datasource_names=datasource_names
-                )
+            initial_results: List[NodeWithScore] = []
 
-            elif search_type == SearchType.KEYWORD:
-                # 只执行关键词搜索
-                return self._keyword_search(
-                    query=query,
-                    top_k=top_k
-                )
+            if search_type == SearchType.HYBRID:
+                # --- Use Native Milvus Hybrid Search ---
+                if not datasource_names:
+                    # 查找第一个类型为milvus的数据源作为默认目标
+                    datasource_infos = await self.vector_store_manager.list_data_sources()
+                    milvus_sources = [ds.name for ds in datasource_infos if ds.type == 'milvus']
+                    if not milvus_sources:
+                        logger.error("No Milvus datasource found for hybrid search.")
+                        return []
+                    target_datasource_name = milvus_sources[0]
+                    logger.info(f"No datasource specified, defaulting to first Milvus source: {target_datasource_name}")
+                elif len(datasource_names) > 1:
+                    # 当前实现仅支持对单个Milvus源执行原生混合搜索
+                    target_datasource_name = datasource_names[0]
+                    logger.warning(f"Multiple datasources provided, using the first one for native hybrid search: {target_datasource_name}")
+                else:
+                    target_datasource_name = datasource_names[0]
 
-            else:  # 混合搜索
-                # 执行向量搜索和关键词搜索，然后融合结果
-                vector_results = await self._vector_search(
-                    query=query,
-                    top_k=top_k * 2,  # 获取更多结果，以便融合后仍有足够结果
-                    filters=filters,
-                    min_score=min_score,
-                    datasource_names=datasource_names
-                )
+                datasource = self.vector_store_manager.data_sources.get(target_datasource_name)
 
-                keyword_results = self._keyword_search(
-                    query=query,
-                    top_k=top_k * 2
-                )
+                # 检查是否是MilvusDataSource并且支持原生混合搜索
+                if isinstance(datasource, MilvusDataSource) and hasattr(datasource, 'hybrid_search'):
+                    logger.info(f"Executing native hybrid search on datasource: {target_datasource_name}")
+                    # 生成查询嵌入
+                    query_embedding = Settings.embed_model.get_query_embedding(query)
 
-                # 融合结果
-                hybrid_results = self._merge_results(
-                    vector_results=vector_results,
-                    keyword_results=keyword_results,
-                    top_k=top_k
-                )
+                    # TODO: Convert LlamaIndex filters (dict) to Milvus expr (str) if needed
+                    # if filters and not milvus_filter_expr:
+                    #     milvus_filter_expr = self._convert_filters_to_expr(filters)
 
-                # 重排序结果
-                if rerank and hybrid_results:
-                    hybrid_results = self._rerank_results(
-                        results=hybrid_results,
-                        query=query
+                    # 调用原生混合搜索方法
+                    # Request more initial results for reranking if rerank=True
+                    initial_top_k = self.rerank_top_n if rerank and self.reranker_model else top_k
+                    initial_results = await datasource.hybrid_search(
+                        query_text=query,
+                        query_vector=query_embedding,
+                        top_k=initial_top_k,
+                        filter_expr=milvus_filter_expr,
                     )
 
-                return hybrid_results
+                else:
+                    logger.warning(f"Datasource '{target_datasource_name}' is not a MilvusDataSource or does not support native hybrid_search. Falling back to vector search.")
+                    # 回退到纯向量搜索
+                    initial_results = await self._vector_search(query, self.rerank_top_n if rerank and self.reranker_model else top_k, filters, 0.0, [target_datasource_name] if target_datasource_name else None)
+
+            elif search_type == SearchType.VECTOR:
+                logger.info("Executing vector-only search.")
+                initial_results = await self._vector_search(query, self.rerank_top_n if rerank and self.reranker_model else top_k, filters, 0.0, datasource_names)
+
+            elif search_type == SearchType.KEYWORD:
+                 logger.info("Executing keyword-only search.")
+                 initial_results = self._keyword_search(query, self.rerank_top_n if rerank and self.reranker_model else top_k, datasource_names)
+
+            # --- Re-ranking Step --- (Moved outside the specific search type blocks)
+            if rerank and self.reranker_model and initial_results:
+                logger.info(f"Applying reranking to top {len(initial_results)} results...")
+                # Ensure reranker model is loaded
+                if not self.reranker_model:
+                    self._load_reranker()
+                
+                if self.reranker_model:
+                    reranked_results = await self.rerank_results(initial_results, query)
+                    # Apply min_score filter *after* reranking
+                    final_results = [node for node in reranked_results if node.score >= min_score]
+                    # Limit to final top_k after reranking
+                    final_results = final_results[:top_k]
+                    logger.info(f"Reranking completed. Returning {len(final_results)} results.")
+                    return final_results
+                else:
+                     logger.warning("Reranker model not available, skipping reranking.")
+                     # Fallback to initial results, apply min_score and top_k
+                     final_results = [node for node in initial_results if node.score >= min_score]
+                     final_results = final_results[:top_k]
+                     return final_results
+            else:
+                # No reranking requested or possible, apply min_score and top_k to initial results
+                final_results = [node for node in initial_results if node.score >= min_score]
+                final_results = final_results[:top_k]
+                logger.info(f"No reranking applied. Returning {len(final_results)} initial results.")
+                return final_results
 
         except Exception as e:
-            logger.error(f"混合检索失败: {str(e)}")
-            # 如果混合检索失败，尝试回退到向量搜索
+            logger.exception(f"Retrieval failed (type: {search_type}): {str(e)}")
+            # Fallback logic can be kept or adjusted
             try:
-                return await self._vector_search(
-                    query=query,
-                    top_k=top_k,
-                    filters=filters,
-                    min_score=min_score,
-                    datasource_names=datasource_names
-                )
+                logger.warning("Falling back to vector search...")
+                return await self._vector_search(query, top_k, filters, min_score, datasource_names)
             except Exception as e2:
-                logger.error(f"回退向量搜索也失败: {str(e2)}")
+                logger.exception(f"Fallback vector search also failed: {str(e2)}")
                 return []
 
     async def _vector_search(
@@ -242,251 +296,160 @@ class HybridRetrievalEngine:
         query: str,
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
-        min_score: float = 0.7,
+        min_score: float = 0.0,
         datasource_names: Optional[List[str]] = None
     ) -> List[NodeWithScore]:
-        """执行向量搜索
-
-        Args:
-            query: 查询文本
-            top_k: 返回的最大结果数
-            filters: 过滤条件
-            min_score: 最小相似度分数
-            datasource_names: 要查询的数据源名称列表，如果为None则查询所有数据源
-
-        Returns:
-            匹配文档列表
-        """
+        """执行向量搜索 (使用 VectorStoreManager)"""
         try:
-            # 获取嵌入向量
-            embed_model = Settings.embed_model
-            query_embedding = embed_model.get_text_embedding(query)
+            query_embedding = Settings.embed_model.get_query_embedding(query)
 
-            # 使用向量存储管理器查询
-            results = await self.vector_store_manager.query(
-                query_embedding=query_embedding,
-                datasource_name=datasource_names[0] if datasource_names and len(datasource_names) == 1 else None,
-                top_k=top_k,
-                filters=filters
-            )
+            # TODO: Improve handling of multiple datasources for vector search if needed
+            target_ds_name = datasource_names[0] if datasource_names else None
+            if not target_ds_name:
+                 datasource_infos = await self.vector_store_manager.list_data_sources()
+                 # Find first available datasource
+                 if datasource_infos:
+                     target_ds_name = datasource_infos[0].name
+                     logger.info(f"No datasource specified for vector search, defaulting to: {target_ds_name}")
+                 else:
+                     logger.error("No datasources available for vector search.")
+                     return []
 
-            # 过滤低分结果
-            filtered_results = []
-            for node in results:
-                if hasattr(node, "score") and node.score >= min_score:
-                    # 标记结果来源
-                    if hasattr(node, "extra_info"):
-                        node.extra_info["search_type"] = "vector"
+            logger.debug(f"Performing vector search on '{target_ds_name}' with top_k={top_k}, filters={filters}")
 
-                    filtered_results.append(node)
+            # 使用 VectorStoreManager 查询
+            # 注意：这里的 filters 是 LlamaIndex 格式的字典过滤器
+            # 如果目标是 MilvusDataSource，VectorStoreManager 可能需要转换它
+            # 或者直接调用 datasource.search_documents 如果原生实现更优
 
-            logger.info(f"向量搜索 '{query}' 找到 {len(filtered_results)} 个结果")
-            return filtered_results
+            datasource = self.vector_store_manager.data_sources.get(target_ds_name)
+            if isinstance(datasource, MilvusDataSource):
+                logger.debug("Targeting MilvusDataSource, attempting native vector search.")
+                # Convert LlamaIndex filters to Milvus expr if possible
+                milvus_expr = self._convert_filters_to_expr(filters) if filters else None
+                results = await datasource.search_documents(
+                    query_vector=query_embedding,
+                    top_k=top_k,
+                    filter_expr=milvus_expr
+                )
+            elif target_ds_name in self.vector_store_manager.indices: # Fallback to LlamaIndex general query if not Milvus or native fails
+                logger.debug("Targeting non-Milvus or using LlamaIndex query fallback.")
+                # Use LlamaIndex VectorStoreQuery for potentially broader compatibility
+                from llama_index.core.vector_stores.types import VectorStoreQuery, MetadataFilters
+                metadata_filters_obj = MetadataFilters.from_dict(filters) if filters else None
+                vector_query = VectorStoreQuery(
+                    query_embedding=query_embedding,
+                    similarity_top_k=top_k,
+                    filters=metadata_filters_obj
+                )
+                # LlamaIndex query might return different structure, adapt if needed
+                index = self.vector_store_manager.indices[target_ds_name]
+                retriever = index.as_retriever(similarity_top_k=top_k)
+                results = retriever.retrieve(vector_query)
+                # Convert results if necessary, LlamaIndex retriever might return nodes directly
+            else:
+                logger.error(f"Datasource '{target_ds_name}' not found or incompatible for vector search.")
+                results = []
 
+            final_results = [node for node in results if node.score >= min_score]
+            logger.info(f"Vector search completed. Returning {len(final_results)} results.")
+            return final_results
         except Exception as e:
-            logger.error(f"向量搜索失败: {str(e)}")
+            logger.exception(f"Vector search failed: {str(e)}")
             return []
 
     def _keyword_search(
         self,
         query: str,
-        top_k: int = 5
+        top_k: int = 5,
+        datasource_names: Optional[List[str]] = None
     ) -> List[NodeWithScore]:
-        """执行关键词搜索
-
-        Args:
-            query: 查询文本
-            top_k: 返回的最大结果数
-
-        Returns:
-            匹配文档列表
-        """
+        """执行关键词搜索 (使用 KeywordSearchEngine)"""
         try:
-            # 调用关键词检索引擎
-            results = self.keyword_engine.search(
-                query=query,
-                top_k=top_k,
-                use_keywords=True
-            )
+            logger.debug(f"Performing keyword search with query: '{query}', top_k={top_k}")
+            # TODO: Enhance KeywordSearchEngine to support filtering by datasource_names if required
+            results = self.keyword_engine.search(query, top_k=top_k)
 
-            # 标记结果来源
+            # Ensure results are in NodeWithScore format
+            final_results = []
             for node in results:
-                if hasattr(node, "extra_info"):
-                    node.extra_info["search_type"] = "keyword"
+                if isinstance(node, NodeWithScore):
+                    final_results.append(node)
+                elif isinstance(node, BaseNode):
+                    # Assign a default score if keyword search doesn't provide one
+                    final_results.append(NodeWithScore(node=node, score=1.0))
 
-            logger.info(f"关键词搜索 '{query}' 找到 {len(results)} 个结果")
-            return results
-
+            logger.info(f"Keyword search completed. Returning {len(final_results)} results.")
+            return final_results
         except Exception as e:
-            logger.error(f"关键词搜索失败: {str(e)}")
+            logger.exception(f"Keyword search failed: {str(e)}")
             return []
 
-    def _merge_results(
-        self,
-        vector_results: List[NodeWithScore],
-        keyword_results: List[NodeWithScore],
-        top_k: int = 5
-    ) -> List[NodeWithScore]:
-        """融合向量搜索和关键词搜索结果
-
-        Args:
-            vector_results: 向量搜索结果
-            keyword_results: 关键词搜索结果
-            top_k: 返回的最大结果数
-
-        Returns:
-            融合后的结果列表
-        """
-        # 使用字典记录所有结果，以节点ID为键，避免重复
-        merged = {}
-
-        # 添加向量搜索结果
-        for node in vector_results:
-            node_id = node.node.node_id
-
-            # 标准化分数
-            normalized_score = node.score
-
-            # 记录结果
-            merged[node_id] = {
-                "node": node,
-                "vector_score": normalized_score,
-                "keyword_score": 0.0
-            }
-
-        # 添加关键词搜索结果
-        for node in keyword_results:
-            node_id = node.node.node_id
-
-            # 标准化分数
-            normalized_score = node.score / max(1.0, max([n.score for n in keyword_results]))
-
-            if node_id in merged:
-                # 已存在，添加关键词分数
-                merged[node_id]["keyword_score"] = normalized_score
-            else:
-                # 新结果
-                merged[node_id] = {
-                    "node": node,
-                    "vector_score": 0.0,
-                    "keyword_score": normalized_score
-                }
-
-        # 计算混合得分
-        for node_id, data in merged.items():
-            # 加权融合分数
-            hybrid_score = (
-                self.vector_weight * data["vector_score"] +
-                self.keyword_weight * data["keyword_score"]
-            )
-
-            # 更新分数
-            data["hybrid_score"] = hybrid_score
-
-        # 按混合分数排序
-        sorted_results = sorted(
-            merged.values(),
-            key=lambda x: x["hybrid_score"],
-            reverse=True
-        )
-
-        # 构建最终结果
-        results = []
-        for data in sorted_results[:top_k]:
-            node = data["node"]
-            # 更新分数为混合分数
-            node.score = data["hybrid_score"]
-
-            # 添加分数明细到extra_info
-            if hasattr(node, "extra_info"):
-                node.extra_info["vector_score"] = data["vector_score"]
-                node.extra_info["keyword_score"] = data["keyword_score"]
-                node.extra_info["search_type"] = "hybrid"
-
-            results.append(node)
-
-        logger.info(f"混合搜索找到 {len(results)} 个结果")
-        return results
-
-    def _rerank_results(
-        self,
-        results: List[NodeWithScore],
-        query: str
-    ) -> List[NodeWithScore]:
-        """重排序结果（内部方法）
-
-        Args:
-            results: 初始结果列表
-            query: 查询文本
-
-        Returns:
-            重排序后的结果列表
-        """
-        # 简单实现：对结果按相似度排序
-        # 如果有更复杂的重排序需求，可以集成外部重排序模型
-
-        # 确保分数在[0,1]范围内
-        for node in results:
-            if node.score > 1.0:
-                node.score = min(1.0, node.score / 10.0)
-
-        # 简单调整：提升包含查询关键词的结果分数
-        keywords = self.keyword_engine.extract_keywords(query)
-        if keywords:
-            for node in results:
-                text = node.node.text.lower()
-                # 计算文本中包含的关键词数量
-                keyword_count = sum(1 for kw in keywords if kw.lower() in text)
-                if keyword_count > 0:
-                    # 提升分数
-                    bonus = 0.1 * (keyword_count / len(keywords))
-                    node.score = min(1.0, node.score + bonus)
-
-        # 按分数重新排序
-        results.sort(key=lambda x: x.score, reverse=True)
-
-        return results
+    def _convert_filters_to_expr(self, filters: Dict[str, Any]) -> Optional[str]:
+        """(Helper) 将 LlamaIndex 字典过滤器转换为 Milvus expr 字符串 (简化版)"""
+        # TODO: Implement robust conversion logic based on supported operators
+        parts = []
+        for key, value in filters.items():
+            if isinstance(value, str):
+                # Basic equality for strings (needs proper escaping)
+                safe_value = value.replace("'", "''")
+                parts.append(f"metadata['{key}'] == '{safe_value}'")
+            elif isinstance(value, (int, float)):
+                parts.append(f"metadata['{key}'] == {value}")
+            elif isinstance(value, bool):
+                 parts.append(f"metadata['{key}'] == {str(value).lower()}")
+            # Add more type/operator handling here (e.g., >, <, in, etc.)
+        if not parts:
+            return None
+        return " and ".join(parts)
 
     async def rerank_results(
         self,
         results: List[NodeWithScore],
         query: str
     ) -> List[NodeWithScore]:
-        """重排序结果（公共方法）
+        """使用 Cross-Encoder 模型重排序初步检索结果。
 
         Args:
-            results: 初始结果列表
-            query: 查询文本
+            results: 初步检索到的 NodeWithScore 列表。
+            query: 原始用户查询。
 
         Returns:
-            重排序后的结果列表
+            经过重排序的 NodeWithScore 列表。
         """
-        # 如果结果为空，直接返回
         if not results:
             return []
+        if not self.reranker_model:
+            logger.warning("Reranker model is not loaded. Cannot perform reranking.")
+            return results # Return original results if no model
 
-        # 调用内部重排序方法
-        reranked_results = self._rerank_results(results, query)
+        try:
+            # 1. 准备模型输入：[query, document_text] 对
+            pairs = [[query, node.get_content()] for node in results]
 
-        # 对于查询重写的结果，进行额外处理
-        for node in reranked_results:
-            # 检查是否有查询变体信息
-            if hasattr(node, "extra_info") and "query_variant" in node.extra_info:
-                variant = node.extra_info["query_variant"]
-                # 如果变体与原始查询不同，稍微降低分数
-                if variant != query:
-                    # 降低10%的分数，但保持排序相对稳定
-                    node.score = node.score * 0.9
+            # 2. 使用模型预测分数 (这部分是同步/CPU密集型，可以在异步函数中运行)
+            # Consider running in executor if it becomes a bottleneck: asyncio.to_thread
+            logger.debug(f"Reranking {len(pairs)} pairs with model {self.reranker_model_name}...")
+            scores = self.reranker_model.predict(pairs, show_progress_bar=False) # Set True for debugging progress
+            logger.debug("Reranking prediction completed.")
 
-                # 添加变体信息到元数据，方便前端展示
-                if node.node.metadata is None:
-                    node.node.metadata = {}
-                node.node.metadata["query_variant"] = variant
+            # 3. 更新节点分数并组合
+            reranked_results = []
+            for i, node_with_score in enumerate(results):
+                new_score = scores[i]
+                # Cross-encoder scores are typically relevance scores, higher is better.
+                # No need to normalize unless required by downstream tasks.
+                reranked_node = NodeWithScore(node=node_with_score.node, score=float(new_score))
+                reranked_results.append(reranked_node)
 
-        # 再次按分数排序
-        reranked_results.sort(key=lambda x: x.score, reverse=True)
+            # 4. 按新分数降序排序
+            reranked_results.sort(key=lambda x: x.score, reverse=True)
 
-        return reranked_results
+            return reranked_results
+
+        except Exception as e:
+            logger.error(f"Reranking failed: {e}", exc_info=True)
+            return results # Return original results on error
 
     async def list_datasources(self) -> List[str]:
         """获取所有可用的数据源名称
