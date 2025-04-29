@@ -17,6 +17,7 @@ from enterprise_kb.api.celery_tasks import router as celery_router
 from enterprise_kb.api.celery_tasks_v2 import router as celery_v2_router
 from enterprise_kb.api.query_rewriting import router as query_rewriting_router
 from enterprise_kb.api.document_segment_api import router as document_segment_router
+from enterprise_kb.api.vector_store import router as vector_store_router  # 添加向量数据库路由
 
 # 导入配置
 from enterprise_kb.core.config.settings import settings
@@ -156,6 +157,7 @@ app.include_router(query_rewriting_router)  # 查询重写路由
 app.include_router(celery_router)
 app.include_router(celery_v2_router)  # 改进的Celery任务API
 app.include_router(document_segment_router)  # 文档分段处理API
+app.include_router(vector_store_router, prefix=settings.API_PREFIX)  # 注册向量数据库路由
 
 @app.get("/", 
     tags=["系统状态"], 

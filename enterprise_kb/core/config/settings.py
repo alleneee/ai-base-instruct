@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     DASHSCOPE_EMBED_MODEL_NAME: str = os.getenv("DASHSCOPE_EMBED_MODEL_NAME", "text-embedding-v2")
     DASHSCOPE_CHAT_MODEL_NAME: str = os.getenv("DASHSCOPE_CHAT_MODEL_NAME", "qwen-max")
 
+    # 向量数据库类型配置
+    VECTOR_STORE_TYPE: Literal["milvus", "elasticsearch"] = os.getenv("VECTOR_STORE_TYPE", "milvus")
+
     # Milvus配置
     MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
     MILVUS_PORT: int = int(os.getenv("MILVUS_PORT", "19530"))
@@ -43,6 +46,15 @@ class Settings(BaseSettings):
     MILVUS_EMBEDDING_FIELD: str = os.getenv("MILVUS_EMBEDDING_FIELD", "embedding")
     MILVUS_METADATA_FIELD: str = os.getenv("MILVUS_METADATA_FIELD", "metadata")
     MILVUS_ID_FIELD: str = os.getenv("MILVUS_ID_FIELD", "id")
+
+    # Elasticsearch配置
+    ELASTICSEARCH_URL: str = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
+    ELASTICSEARCH_USERNAME: str = os.getenv("ELASTICSEARCH_USERNAME", "")
+    ELASTICSEARCH_PASSWORD: str = os.getenv("ELASTICSEARCH_PASSWORD", "")
+    ELASTICSEARCH_API_KEY: str = os.getenv("ELASTICSEARCH_API_KEY", "")
+    ELASTICSEARCH_INDEX_PREFIX: str = os.getenv("ELASTICSEARCH_INDEX_PREFIX", "vector_")
+    ELASTICSEARCH_TIMEOUT: int = int(os.getenv("ELASTICSEARCH_TIMEOUT", "30"))
+    ELASTICSEARCH_SIMILARITY: str = os.getenv("ELASTICSEARCH_SIMILARITY", "cosine")  # cosine, l2_norm, dot_product
 
     # MySQL数据库配置
     MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
