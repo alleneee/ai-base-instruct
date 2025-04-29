@@ -11,6 +11,10 @@ engine = create_async_engine(
     settings.DATABASE_URL, 
     echo=settings.DEBUG,
     future=True,
+    pool_size=getattr(settings, "DB_POOL_SIZE", 5),
+    max_overflow=getattr(settings, "DB_MAX_OVERFLOW", 10),
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
 # 创建异步会话工厂
@@ -32,4 +36,6 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
             await session.commit()
         except Exception:
             await session.rollback()
-            raise 
+            raise
+        finally:
+            await session.close() 
