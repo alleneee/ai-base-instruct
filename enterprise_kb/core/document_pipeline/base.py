@@ -87,29 +87,44 @@ class PipelineFactory:
         return processor_class
     
     @classmethod
-    def create_pipeline(cls, file_type: str, custom_processors: Optional[List[str]] = None) -> DocumentPipeline:
+    def create_pipeline(cls, file_type: str, custom_processors: Optional[List[str]] = None, 
+                       use_markitdown: bool = True) -> DocumentPipeline:
         """
         创建处理管道
         
         Args:
             file_type: 文件类型
             custom_processors: 自定义处理器列表，如果提供则按顺序使用这些处理器
+            use_markitdown: 是否使用MarkItDown处理器（默认为True）
             
         Returns:
             配置好的处理管道
         """
         pipeline = DocumentPipeline()
         
+        # 首先添加文件验证处理器
+        if "FileValidator" in cls._processors:
+            pipeline.add_processor(cls._processors["FileValidator"]())
+        
+        # 如果指定使用MarkItDown，优先添加MarkItDown处理器
+        if use_markitdown and "MarkItDownProcessor" in cls._processors:
+            pipeline.add_processor(cls._processors["MarkItDownProcessor"]())
+        
         # 如果指定了自定义处理器，按顺序添加
         if custom_processors:
             for processor_name in custom_processors:
+                # 跳过已添加的处理器
+                if processor_name in ["FileValidator", "MarkItDownProcessor"] and processor_name in [p.__class__.__name__ for p in pipeline.processors]:
+                    continue
+                    
                 if processor_name in cls._processors:
                     pipeline.add_processor(cls._processors[processor_name]())
             return pipeline
         
-        # 否则，添加支持该文件类型的所有处理器
-        for processor_class in cls._processors.values():
-            if processor_class.supports_file_type(file_type):
+        # 否则，添加支持该文件类型的所有处理器，排除已添加的处理器
+        added_processor_names = [p.__class__.__name__ for p in pipeline.processors]
+        for processor_name, processor_class in cls._processors.items():
+            if processor_name not in added_processor_names and processor_class.supports_file_type(file_type):
                 pipeline.add_processor(processor_class())
                 
         return pipeline 

@@ -1,10 +1,11 @@
 """文档处理器实现模块"""
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
 import fitz  # PyMuPDF
 import docx
 import markitdown
+from pathlib import Path
 
 from enterprise_kb.core.document_pipeline.base import DocumentProcessor, PipelineFactory
 from enterprise_kb.core.config.settings import settings
@@ -41,6 +42,94 @@ class FileValidator(DocumentProcessor):
 
 
 @PipelineFactory.register_processor
+class MarkItDownProcessor(DocumentProcessor):
+    """通用MarkItDown文档处理器，适用于多种文档格式"""
+    
+    # 支持更多格式，包括HTML、RTF等MarkItDown支持的格式
+    SUPPORTED_TYPES = ['pdf', 'md', 'markdown', 'docx', 'txt', 'html', 'htm', 'rtf', 'odt', 'pptx']
+    
+    def __init__(self):
+        """初始化MarkItDown处理器"""
+        super().__init__()
+        self.markitdown_converter = markitdown.MarkItDown(enable_plugins=True)
+    
+    def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """使用MarkItDown处理文档，转换为标准Markdown格式"""
+        file_path = context.get('file_path')
+        file_type = context.get('file_type', '').lower()
+        
+        if not file_path or not os.path.exists(file_path) or file_type not in self.SUPPORTED_TYPES:
+            return context
+            
+        try:
+            # 检查是否需要转换为Markdown
+            if context.get('convert_to_markdown', True):
+                logger.info(f"使用MarkItDown转换文档: {file_path}")
+                
+                # 使用MarkItDown转换文件
+                try:
+                    markdown_content = self.markitdown_converter.convert(file_path)
+                    context['markdown_content'] = markdown_content
+                    
+                    # 同时提供纯文本内容，方便后续处理
+                    if 'text_content' not in context:
+                        context['text_content'] = markdown_content
+                        
+                    logger.info(f"文档转换为Markdown成功: {file_path}")
+                    
+                    # 提取文档结构信息
+                    self._extract_document_structure(markdown_content, context)
+                    
+                except Exception as e:
+                    logger.warning(f"MarkItDown转换失败，尝试使用备用方法: {str(e)}")
+                    # 如果MarkItDown转换失败，使用原始处理流程
+                    context['markdown_conversion_failed'] = True
+            
+        except Exception as e:
+            logger.error(f"文档处理失败: {str(e)}")
+            raise
+            
+        return context
+    
+    def _extract_document_structure(self, markdown_content: str, context: Dict[str, Any]):
+        """从Markdown内容中提取文档结构信息"""
+        import re
+        
+        # 提取标题
+        headings = []
+        heading_pattern = re.compile(r'^(#{1,6})\s+(.*?)$', re.MULTILINE)
+        for match in heading_pattern.finditer(markdown_content):
+            level = len(match.group(1))
+            title = match.group(2).strip()
+            headings.append((level, title))
+        
+        # 提取代码块
+        code_blocks = []
+        code_pattern = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
+        for match in code_pattern.finditer(markdown_content):
+            language = match.group(1)
+            code = match.group(2)
+            code_blocks.append((language, code))
+        
+        # 提取图片
+        images = []
+        image_pattern = re.compile(r'!\[(.*?)\]\((.*?)\)')
+        for match in image_pattern.finditer(markdown_content):
+            alt_text = match.group(1)
+            image_path = match.group(2)
+            images.append((alt_text, image_path))
+        
+        # 更新上下文
+        context['document_structure'] = {
+            'headings': headings,
+            'code_blocks': code_blocks,
+            'images': images
+        }
+        
+        return context
+
+
+@PipelineFactory.register_processor
 class PDFProcessor(DocumentProcessor):
     """PDF文档处理器"""
     
@@ -49,6 +138,11 @@ class PDFProcessor(DocumentProcessor):
     def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """处理PDF文档"""
         if context.get('file_type') != 'pdf':
+            return context
+            
+        # 如果已经通过MarkItDown转换过，跳过额外处理
+        if context.get('markdown_content') and not context.get('markdown_conversion_failed'):
+            logger.info(f"PDF已通过MarkItDown处理，跳过额外处理")
             return context
             
         file_path = context.get('file_path')
@@ -68,10 +162,16 @@ class PDFProcessor(DocumentProcessor):
             context['page_count'] = len(doc)
             context['toc'] = toc if toc else []
             
-            # 如果需要转换为Markdown，可以在这里调用MarkItDown
-            if context.get('convert_to_markdown', True):
-                context['markdown_content'] = self._convert_to_markdown(file_path)
-                
+            # 如果需要转换为Markdown，但MarkItDown失败，使用备用方法
+            if context.get('convert_to_markdown', True) and context.get('markdown_conversion_failed'):
+                try:
+                    # 尝试备用方法转换为Markdown
+                    md_content = self._convert_to_basic_markdown(text_content, toc)
+                    context['markdown_content'] = md_content
+                    logger.info(f"PDF使用备用方法转换为Markdown成功: {file_path}")
+                except Exception as e:
+                    logger.error(f"PDF备用转换失败: {str(e)}")
+                    
             logger.info(f"PDF处理完成: {file_path}, 页数: {len(doc)}")
             
         except Exception as e:
@@ -79,24 +179,26 @@ class PDFProcessor(DocumentProcessor):
             raise
             
         return context
+    
+    def _convert_to_basic_markdown(self, text: str, toc: List) -> str:
+        """简单地将文本转换为Markdown格式"""
+        # 如果有目录，创建Markdown标题
+        md_content = ""
+        if toc:
+            md_content += "# 文档目录\n\n"
+            for level, title, page in toc:
+                indent = "  " * (level - 1)
+                md_content += f"{indent}- {title} (页码: {page})\n"
+            md_content += "\n\n# 文档内容\n\n"
         
-    def _convert_to_markdown(self, file_path: str) -> str:
-        """
-        将PDF转换为Markdown
+        # 添加文本内容，按段落分割
+        paragraphs = text.split("\n\n")
+        for para in paragraphs:
+            para = para.strip()
+            if para:
+                md_content += para + "\n\n"
         
-        Args:
-            file_path: PDF文件路径
-            
-        Returns:
-            Markdown内容
-        """
-        try:
-            # 使用MarkItDown转换
-            md_content = markitdown.markitdown(file_path)
-            return md_content
-        except Exception as e:
-            logger.error(f"PDF转Markdown失败: {str(e)}")
-            raise
+        return md_content
 
 
 @PipelineFactory.register_processor
@@ -108,6 +210,11 @@ class DocxProcessor(DocumentProcessor):
     def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """处理Word文档"""
         if context.get('file_type') != 'docx':
+            return context
+            
+        # 如果已经通过MarkItDown转换过，跳过额外处理
+        if context.get('markdown_content') and not context.get('markdown_conversion_failed'):
+            logger.info(f"Word文档已通过MarkItDown处理，跳过额外处理")
             return context
             
         file_path = context.get('file_path')
@@ -439,6 +546,51 @@ class VectorizationProcessor(DocumentProcessor):
             
         except Exception as e:
             logger.error(f"向量化失败: {str(e)}")
+            raise
+            
+        return context 
+
+
+@PipelineFactory.register_processor
+class HTMLProcessor(DocumentProcessor):
+    """HTML文档处理器"""
+    
+    SUPPORTED_TYPES = ['html', 'htm']
+    
+    def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """处理HTML文档"""
+        if context.get('file_type') not in ['html', 'htm']:
+            return context
+            
+        # 如果已经通过MarkItDown转换过，跳过额外处理
+        if context.get('markdown_content') and not context.get('markdown_conversion_failed'):
+            logger.info(f"HTML文档已通过MarkItDown处理，跳过额外处理")
+            return context
+            
+        file_path = context.get('file_path')
+        try:
+            # 读取HTML文件
+            with open(file_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+                
+            # 尝试提取纯文本
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(html_content, 'html.parser')
+                text_content = soup.get_text(separator='\n')
+            except ImportError:
+                # 如果没有BeautifulSoup，使用简单替换
+                import re
+                text_content = re.sub(r'<[^>]*>', ' ', html_content)
+                text_content = re.sub(r'\s+', ' ', text_content).strip()
+                
+            # 更新上下文
+            context['text_content'] = text_content
+            
+            logger.info(f"HTML文档处理完成: {file_path}")
+            
+        except Exception as e:
+            logger.error(f"HTML处理失败: {str(e)}")
             raise
             
         return context 

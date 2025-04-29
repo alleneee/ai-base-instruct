@@ -1,7 +1,7 @@
 """数据源基类模块，定义数据源抽象接口"""
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, TypeVar, Generic, Type
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class DataSourceConfig(BaseModel):
@@ -10,8 +10,7 @@ class DataSourceConfig(BaseModel):
     name: str = Field(..., description="数据源名称")
     description: Optional[str] = Field(None, description="数据源描述")
     
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 T = TypeVar('T', bound=DataSourceConfig)

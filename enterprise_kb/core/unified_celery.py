@@ -22,7 +22,8 @@ from enterprise_kb.core.config.settings import settings
 logger = logging.getLogger(__name__)
 
 # 确保日志目录存在
-os.makedirs(settings.LOGS_DIR, exist_ok=True)
+logs_dir = getattr(settings, "LOGS_DIR", "logs")
+os.makedirs(logs_dir, exist_ok=True)
 
 # 定义交换机
 default_exchange = Exchange('default', type='direct')

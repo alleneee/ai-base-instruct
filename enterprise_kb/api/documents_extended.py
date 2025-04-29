@@ -1,7 +1,7 @@
 """扩展的文档管理API路由"""
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Body, Query, Depends, BackgroundTasks, Path
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 import json
 import os
 
@@ -45,19 +45,19 @@ router = APIRouter(
     }
 )
 
-# 创建文档服务实例
-document_service = DocumentService()
+# 这里不再直接初始化DocumentService，而是通过Depends获取
 
 class BulkDeleteRequest(BaseModel):
     """批量删除请求模型"""
     doc_ids: List[str] = Field(..., description="要删除的文档ID列表")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "doc_ids": ["doc123", "doc456", "doc789"]
             }
         }
+    )
 
 class DocumentProcessResponse(BaseModel):
     """文档处理响应模型"""
@@ -65,14 +65,15 @@ class DocumentProcessResponse(BaseModel):
     doc_id: str = Field(..., description="文档ID")
     message: Optional[str] = Field(None, description="处理消息")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "doc_id": "doc123",
                 "message": "文档已成功处理"
             }
         }
+    )
 
 class DocumentMetadata(BaseModel):
     """文档元数据模型"""
@@ -83,8 +84,8 @@ class DocumentMetadata(BaseModel):
     source: Optional[str] = Field(None, description="文档来源")
     custom_data: Optional[Dict[str, Any]] = Field(None, description="自定义元数据")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "title": "企业知识库介绍",
                 "author": "张三",
@@ -97,6 +98,7 @@ class DocumentMetadata(BaseModel):
                 }
             }
         }
+    )
 
 class DocumentResponse(BaseModel):
     """文档处理响应模型"""
@@ -108,8 +110,8 @@ class DocumentResponse(BaseModel):
     metadata: Dict[str, Any] = Field(..., description="元数据")
     processing_strategy: Optional[Dict[str, Any]] = Field(None, description="处理策略")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "doc_id": "doc123",
                 "file_name": "企业知识库介绍.pdf",
@@ -124,7 +126,7 @@ class DocumentResponse(BaseModel):
                 },
                 "processing_strategy": {
                     "doc_type": "pdf",
-                    "should_convert_to_markdown": true,
+                    "should_convert_to_markdown": True,
                     "chunking_params": {
                         "chunk_size": 1024,
                         "chunk_overlap": 20
@@ -132,6 +134,7 @@ class DocumentResponse(BaseModel):
                 }
             }
         }
+    )
 
 class ProcessingStrategyRequest(BaseModel):
     """处理策略请求"""
@@ -143,17 +146,18 @@ class ProcessingStrategyRequest(BaseModel):
     use_incremental: Optional[bool] = Field(None, description="是否使用增量更新")
     chunking_type: Optional[str] = Field(None, description="分块类型: semantic, hierarchical")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
-                "prefer_markdown": true,
+                "prefer_markdown": True,
                 "custom_chunk_size": 1200,
                 "custom_chunk_overlap": 50,
-                "use_parallel": true,
-                "use_semantic_chunking": true,
+                "use_parallel": True,
+                "use_semantic_chunking": True,
                 "chunking_type": "semantic"
             }
         }
+    )
 
 async def process_document_background(
     file_path: str,
@@ -214,7 +218,7 @@ async def process_document_background(
                         },
                         "processing_strategy": {
                             "doc_type": "pdf",
-                            "should_convert_to_markdown": true
+                            "should_convert_to_markdown": True
                         }
                     }
                 }
@@ -367,12 +371,12 @@ async def upload_document(
                             "complexity": "medium",
                             "features": {
                                 "page_count": 5,
-                                "has_tables": true,
-                                "has_images": true,
+                                "has_tables": True,
+                                "has_images": True,
                                 "text_density": 0.85,
                                 "estimated_tokens": 4500
                             },
-                            "should_convert_to_markdown": true,
+                            "should_convert_to_markdown": True,
                             "chunking_params": {
                                 "chunk_size": 1024,
                                 "chunk_overlap": 50,
@@ -462,7 +466,7 @@ async def analyze_document(
                         },
                         "processing_strategy": {
                             "doc_type": "pdf",
-                            "should_convert_to_markdown": true
+                            "should_convert_to_markdown": True
                         }
                     }
                 }
@@ -597,7 +601,7 @@ async def update_document(
             "content": {
                 "application/json": {
                     "example": {
-                        "success": true,
+                        "success": True,
                         "doc_id": "doc123",
                         "message": "文档已成功删除"
                     }
@@ -651,12 +655,12 @@ async def delete_document(
                 "application/json": {
                     "example": [
                         {
-                            "success": true,
+                            "success": True,
                             "doc_id": "doc123",
                             "message": "文档已成功删除"
                         },
                         {
-                            "success": false,
+                            "success": False,
                             "doc_id": "doc456",
                             "message": "文档不存在"
                         }
@@ -724,7 +728,7 @@ async def bulk_delete_documents(
                             "text_chars": 0,
                             "metadata": {
                                 "file_path": "/tmp/uploads/doc123_文档1.pdf",
-                                "batch_processing": true
+                                "batch_processing": True
                             }
                         },
                         {
@@ -735,7 +739,7 @@ async def bulk_delete_documents(
                             "text_chars": 0,
                             "metadata": {
                                 "file_path": "/tmp/uploads/doc124_文档2.docx",
-                                "batch_processing": true
+                                "batch_processing": True
                             }
                         }
                     ]

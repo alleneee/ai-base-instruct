@@ -1,8 +1,8 @@
 import os
-from typing import Optional, Dict, Any, List, Union, AnyHttpUrl
+from typing import Optional, Dict, Any, List, Union
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from pydantic import validator, Field
+from pydantic import validator, Field, AnyHttpUrl, ConfigDict
 
 class Settings(BaseSettings):
     # 应用配置
@@ -29,22 +29,13 @@ class Settings(BaseSettings):
     MILVUS_METADATA_FIELD: str = os.getenv("MILVUS_METADATA_FIELD", "metadata")
     MILVUS_ID_FIELD: str = os.getenv("MILVUS_ID_FIELD", "id")
 
-    # PostgreSQL配置
-    POSTGRES_CONNECTION_STRING: str = os.getenv("POSTGRES_CONNECTION_STRING", "postgresql+asyncpg://postgres:postgres@localhost:5432/enterprise_kb")
-    POSTGRES_SCHEMA_NAME: str = os.getenv("POSTGRES_SCHEMA_NAME", "public")
-    POSTGRES_TABLE_NAME: str = os.getenv("POSTGRES_TABLE_NAME", "kb_vectors")
-    POSTGRES_VECTOR_COLUMN: str = os.getenv("POSTGRES_VECTOR_COLUMN", "embedding")
-    POSTGRES_CONTENT_COLUMN: str = os.getenv("POSTGRES_CONTENT_COLUMN", "content")
-    POSTGRES_METADATA_COLUMN: str = os.getenv("POSTGRES_METADATA_COLUMN", "metadata")
-    POSTGRES_DIMENSION: int = int(os.getenv("POSTGRES_DIMENSION", "1536"))
-
     # MySQL数据库配置
     MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
     MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
     MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
     MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "password")
     MYSQL_DB: str = os.getenv("MYSQL_DB", "enterprise_kb")
-    MYSQL_URL: str = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+    MYSQL_URL: str = f"mysql+aiomysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
 
     # 文档处理配置
     UPLOAD_DIR: str = "data/uploads"
@@ -55,15 +46,14 @@ class Settings(BaseSettings):
     ]
 
     # 数据库配置
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/enterprise_kb"
-    )
+    DATABASE_URL: str = MYSQL_URL  # 强制使用 MySQL 连接字符串，忽略环境变量
 
     # 安全配置
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 天
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # 30 天
+    # 7 天
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
+    # 30 天
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     JWT_ALGORITHM: str = "HS256"
 
     # 鉴权配置
@@ -98,8 +88,8 @@ class Settings(BaseSettings):
         f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
     )
 
-    # 缓存配置
-    CACHE_EXPIRE: int = 60 * 15  # 15分钟
+    # 缓存配置 (15分钟)
+    CACHE_EXPIRE: int = 60 * 15
 
     # API限流配置
     RATE_LIMIT_SECOND: int = 10  # 每秒请求数量限制
@@ -109,7 +99,7 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     # CORS配置
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    BACKEND_CORS_ORIGINS: List[str] = []
 
     # Celery配置
     CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/0")
@@ -121,7 +111,7 @@ class Settings(BaseSettings):
     CELERY_WORKER_PREFETCH_MULTIPLIER: int = Field(default=4)  # worker预取任务数乘数
     CELERY_TASK_ACKS_LATE: bool = Field(default=True)  # 任务完成后再确认
     CELERY_RESULT_EXPIRES: int = Field(default=86400 * 7)  # 结果过期时间（秒）
-    CELERY_WORKER_CONCURRENCY: int = Field(default=None)  # worker并发数，None表示使用CPU核心数
+    CELERY_WORKER_CONCURRENCY: Optional[int] = Field(default=4)  # worker并发数，默认4个workers
     CELERY_TASK_DEFAULT_RATE_LIMIT: str = Field(default="100/m")  # 默认任务速率限制
     CELERY_TASK_EAGER_PROPAGATES: bool = Field(default=True)  # 同步模式下传播异常
 
@@ -132,7 +122,7 @@ class Settings(BaseSettings):
 
     # 并行处理配置
     PARALLEL_PROCESSING_ENABLED: bool = Field(default=True)
-    PARALLEL_MAX_WORKERS: int = Field(default=None)  # None表示使用CPU核心数
+    PARALLEL_MAX_WORKERS: Optional[int] = Field(default=4)  # 默认4个workers
     PARALLEL_CHUNK_SIZE: int = Field(default=100000)  # 并行处理的块大小（字符数）
     PARALLEL_CHUNK_STRATEGY: str = Field(default="sentence")  # 分块策略：fixed_size, sentence, paragraph, semantic
     PARALLEL_USE_DISTRIBUTED: bool = Field(default=False)  # 是否使用分布式处理(Celery)
@@ -179,7 +169,8 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
 
-    model_config = SettingsConfigDict(
+    # 使用推荐的ConfigDict替代旧的model_config属性
+    model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore"
@@ -188,7 +179,12 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """获取应用设置的缓存实例"""
-    return Settings()
+    settings_instance = Settings()
+    
+    # 强制设置 DATABASE_URL 为 MYSQL_URL
+    settings_instance.DATABASE_URL = settings_instance.MYSQL_URL
+    
+    return settings_instance
 
 settings = get_settings()
 

@@ -48,7 +48,7 @@ class DocumentModel(Base):
     )
     
     # 元数据
-    metadata: Mapped[Dict[str, Any]] = mapped_column(
+    doc_metadata: Mapped[Dict[str, Any]] = mapped_column(
         JSON, 
         nullable=False, 
         default=dict

@@ -4,9 +4,25 @@ pydantic>=2.0.0
 pydantic-settings>=2.0.0
 uvicorn>=0.23.0
 python-multipart>=0.0.6
+starlette>=0.25.0
 
 # 数据库相关
 pymilvus>=2.3.0
+pymysql>=1.1.0
+sqlalchemy>=2.0.23
+alembic>=1.13.0
+
+# 认证相关
+PyJWT>=2.0.0
+fastapi-users>=12.1.2
+
+# API增强
+fastapi-cache2>=0.2.1
+fastapi-pagination>=0.12.0
+fastapi-limiter>=0.1.5
+
+# 邮件支持
+fastapi-mail>=1.4.1
 
 # LlamaIndex相关
 llama-index-core>=0.10.0
@@ -24,6 +40,11 @@ unstructured-inference>=0.7.0
 pymupdf>=1.23.0
 python-docx>=0.8.11
 
+# 文本处理和相似度匹配
+rapidfuzz>=3.0.0
+nltk>=3.8.0
+jieba>=0.42.0
+
 # 工具库
 python-dotenv>=1.0.0
 nest-asyncio>=1.5.8
@@ -31,6 +52,7 @@ nest-asyncio>=1.5.8
 # 开发工具
 pytest>=7.0.0
 httpx>=0.24.0
+pytest-asyncio>=0.21.0
 
 # Markdown库
 markitdown==0.1.1
@@ -43,3 +65,7 @@ flower>=2.0.1
 
 # 令牌计数
 tiktoken>=0.5.0
+
+# AI/ML相关
+openai>=1.3.0
+numpy>=1.26.0

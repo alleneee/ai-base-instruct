@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional, Any
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict
 
 
 class FileType(str, Enum):
@@ -65,9 +65,7 @@ class DocumentResponse(BaseModel):
     node_count: Optional[int] = None
     size_bytes: Optional[int] = None
     
-    class Config:
-        """Pydantic配置"""
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DocumentList(BaseModel):
@@ -90,6 +88,4 @@ class DocumentTag(BaseModel):
     description: Optional[str] = None
     color: Optional[str] = None
     
-    class Config:
-        """Pydantic配置"""
-        from_attributes = True 
+    model_config = ConfigDict(from_attributes=True) 

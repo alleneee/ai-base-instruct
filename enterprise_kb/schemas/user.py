@@ -5,7 +5,7 @@
 """
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, validator, ConfigDict
 
 
 class UserBase(BaseModel):
@@ -70,8 +70,7 @@ class UserInDB(UserBase):
     id: int
     hashed_password: str
     
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class User(UserBase):
@@ -85,5 +84,4 @@ class User(UserBase):
     id: int
     roles: List[str] = []
     
-    class Config:
-        orm_mode = True 
+    model_config = ConfigDict(from_attributes=True) 

@@ -7,12 +7,12 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
 import time
 import uvicorn
+from contextlib import asynccontextmanager
 
 # 导入路由
 from enterprise_kb.api.documents_extended import router as documents_router
 from enterprise_kb.api.datasources import router as datasources_router
 from enterprise_kb.api.retrieval import router as retrieval_router
-from enterprise_kb.api.ragflow import router as ragflow_router
 from enterprise_kb.api.celery_tasks import router as celery_router
 from enterprise_kb.api.celery_tasks_v2 import router as celery_v2_router
 from enterprise_kb.api.query_rewriting import router as query_rewriting_router
@@ -31,20 +31,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 定义应用生命周期上下文管理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 应用启动时初始化
+    await app.state.init_cache()
+    await app.state.init_limiter()
+    logger.info("应用启动完成，所有服务已就绪")
+    
+    yield  # 应用运行中
+    
+    # 应用关闭时清理
+    await app.state.close_cache()
+    await app.state.close_limiter()
+    logger.info("应用正在关闭，执行清理操作")
+    # 执行其他必要的清理工作
+
 # 创建FastAPI应用
 app = FastAPI(
     title=settings.APP_NAME,
     description="""
     # 企业知识库平台API文档
     
-    本平台提供了一套完整的企业级知识库API，支持文档处理、向量检索和RAGFlow集成功能。
+    本平台提供了一套完整的企业级知识库API，支持文档处理、向量检索功能。
     
     ## 主要功能
     
     * **文档管理**：支持多种格式文档的上传、处理和管理
     * **智能文档分析**：自动分析文档特征，选择最佳处理路径
     * **向量检索**：支持向量搜索、关键词搜索和混合搜索
-    * **RAGFlow集成**：与RAGFlow无缝集成，实现高级检索增强生成
     
     ## 认证方式
     
@@ -79,6 +95,7 @@ app = FastAPI(
         "url": "https://opensource.org/licenses/MIT",
     },
     terms_of_service="https://example.com/terms/",
+    lifespan=lifespan,
 )
 
 # 添加CORS中间件
@@ -105,19 +122,6 @@ setup_cache(app)
 
 # 设置速率限制（现代 lifespan 方式）
 setup_limiter(app)
-
-# 定义自己的应用级 lifespan 函数（可选）
-@app.lifespan
-async def app_lifespan(app: FastAPI):
-    """应用级别的 lifespan 处理"""
-    # 应用启动时初始化
-    logger.info("应用启动完成，所有服务已就绪")
-    
-    yield
-    
-    # 应用关闭时清理
-    logger.info("应用正在关闭，执行清理操作")
-    # 执行其他必要的清理工作
 
 # 全局异常处理
 @app.exception_handler(HTTPException)
@@ -148,7 +152,6 @@ async def general_exception_handler(request, exc):
 app.include_router(documents_router, prefix=settings.API_PREFIX)
 app.include_router(datasources_router, prefix=settings.API_PREFIX)
 app.include_router(retrieval_router, prefix=settings.API_PREFIX)
-app.include_router(ragflow_router, prefix=settings.API_PREFIX)
 app.include_router(query_rewriting_router)  # 查询重写路由
 app.include_router(celery_router)
 app.include_router(celery_v2_router)  # 改进的Celery任务API
@@ -256,10 +259,6 @@ def custom_openapi():
         {
             "name": "检索服务",
             "description": "提供向量检索和语义搜索功能",
-        },
-        {
-            "name": "RAGFlow集成",
-            "description": "与RAGFlow平台集成的接口",
         },
         {
             "name": "系统状态",

@@ -10,6 +10,7 @@ from enterprise_kb.api.v1.endpoints.retrieval import router as retrieval_router
 from enterprise_kb.api.v1.endpoints.chats import router as chats_router
 from enterprise_kb.api.v1.endpoints.agents import router as agents_router
 from enterprise_kb.api.v1.endpoints.openai_compat import router as openai_compat_router
+from enterprise_kb.api.v1.endpoints.vector_db import router as vector_db_router
 from enterprise_kb.core.config.settings import settings
 
 # 创建V1路由
@@ -25,3 +26,4 @@ api_router_v1.include_router(retrieval_router)
 api_router_v1.include_router(chats_router)
 api_router_v1.include_router(agents_router)
 api_router_v1.include_router(openai_compat_router) 
+api_router_v1.include_router(vector_db_router, prefix="/vector_db", tags=["向量数据库"]) 

@@ -9,10 +9,11 @@ from enterprise_kb.core.config.settings import settings
 # 创建异步引擎
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DB_ECHO,
+    echo=settings.DEBUG,  # 使用DEBUG代替DB_ECHO
     future=True,
-    pool_size=settings.DB_POOL_SIZE,
-    max_overflow=settings.DB_MAX_OVERFLOW
+    # 使用默认值，以防设置中没有这些属性
+    pool_size=getattr(settings, "DB_POOL_SIZE", 5),
+    max_overflow=getattr(settings, "DB_MAX_OVERFLOW", 10)
 )
 
 # 创建会话工厂
