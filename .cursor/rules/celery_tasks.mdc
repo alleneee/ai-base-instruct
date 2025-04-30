@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: Celery 异步任务处理系统
+globs: 
 alwaysApply: false
 ---
 # Celery 异步任务处理系统

@@ -1,181 +1,188 @@
-#!/usr/bin/env python3
 """
-Milvus功能测试脚本
-用于验证Milvus数据源的基本功能，包括连接、增删改查等操作
+测试Milvus向量数据库的CRUD功能
+
+注意：此文件的测试内容已被集成到标准测试套件中 tests/core/test_milvus_integration.py
+建议使用标准测试套件进行完整测试，此文件仅作为快速独立测试使用。
 """
-import os
-import sys
 import asyncio
-import logging
-from typing import List, Dict, Any
+import os
 import random
-import numpy as np
+from typing import List, Dict, Any
 
-# 添加项目根目录到 PYTHONPATH
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 设置环境变量
+os.environ["MILVUS_HOST"] = "localhost"
+os.environ["MILVUS_PORT"] = "19530"
+os.environ["MILVUS_COLLECTION"] = "test_collection"
+os.environ["MILVUS_DIMENSION"] = "1536"
+os.environ["MILVUS_OVERWRITE"] = "true"
 
+# 导入我们的Milvus模块
 from enterprise_kb.storage.datasource.milvus import MilvusDataSource, MilvusDataSourceConfig
-from enterprise_kb.core.config.settings import settings
-from enterprise_kb.utils.milvus_client import get_milvus_client
+from enterprise_kb.utils.milvus_client import MilvusClient, get_milvus_client
 from llama_index.core.schema import TextNode
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# 生成随机向量
+# 生成随机向量的辅助函数
 def generate_random_vector(dim: int = 1536) -> List[float]:
-    """生成随机向量，用于测试"""
-    vector = np.random.randn(dim).tolist()
-    # 归一化
-    norm = np.linalg.norm(vector)
-    return [x / norm for x in vector]
+    return [random.uniform(-1.0, 1.0) for _ in range(dim)]
 
-# 创建测试文档
-def create_test_documents(count: int = 10) -> List[dict]:
-    """创建测试文档数据"""
-    documents = []
+# 生成测试数据
+def generate_test_data(count: int = 5) -> List[Dict[str, Any]]:
+    data = []
     for i in range(count):
-        documents.append({
-            "doc_id": f"test-doc-{i}",
-            "chunk_id": f"test-chunk-{i}",
-            "text": f"这是测试文档 {i} 的内容。包含一些关键词：测试、向量、数据库、Milvus。",
-            "metadata": {
-                "doc_id": f"test-doc-{i}",
-                "source": "test",
-                "category": random.choice(["文档", "技术文档", "操作手册", "说明书"]),
-                "importance": random.randint(1, 5)
-            },
-            "vector": generate_random_vector(settings.MILVUS_DIMENSION)
+        data.append({
+            "doc_id": f"doc_{i}",
+            "chunk_id": f"chunk_{i}",
+            "text": f"This is test document {i} with some content for testing purposes.",
+            "vector": generate_random_vector(),
+            "metadata": {"type": "test", "source": "generated", "category": f"category_{i % 3}"}
         })
-    return documents
+    return data
 
-async def run_test():
-    """运行Milvus功能测试"""
-    logger.info("开始Milvus功能测试...")
+# 初始化Milvus客户端测试
+def test_milvus_client():
+    print("\n=== 测试 MilvusClient ===")
+    client = MilvusClient()
     
-    # 检查 Milvus 环境变量
-    logger.info(f"Milvus配置: URI={settings.MILVUS_URI}, Collection={settings.MILVUS_COLLECTION}, Dimension={settings.MILVUS_DIMENSION}")
+    # 创建集合
+    print("创建测试集合...")
+    client.create_collection(force_recreate=True)
     
-    # 创建Milvus数据源配置
+    # 生成测试数据
+    test_data = generate_test_data(10)
+    
+    # 批量插入数据
+    print("批量插入测试数据...")
+    client.batch_insert(test_data)
+    
+    # 查询数据
+    print("搜索向量...")
+    results = client.search(
+        vector=generate_random_vector(),
+        top_k=3
+    )
+    print(f"搜索结果: {len(results)} 条")
+    if results:
+        print(f"第一条结果: ID={results[0]['doc_id']}, 文本={results[0]['text'][:30]}..., 相似度={results[0]['distance']}")
+    
+    # 获取状态
+    stats = client.get_collection_stats()
+    print(f"集合统计: {stats}")
+    
+    # 删除一个文档
+    if test_data:
+        doc_id = test_data[0]["doc_id"]
+        print(f"删除文档: {doc_id}")
+        client.delete_by_doc_id(doc_id)
+    
+    # 清理集合
+    print("清空集合...")
+    # 获取所有文档ID
+    all_doc_ids = [item["doc_id"] for item in test_data[1:]]
+    deleted = client.batch_delete_by_doc_ids(all_doc_ids)
+    print(f"已删除 {deleted} 条记录")
+    
+    # 关闭连接
+    client.close()
+    print("测试完成!")
+    return True
+
+# 测试MilvusDataSource
+async def test_milvus_datasource():
+    print("\n=== 测试 MilvusDataSource ===")
     config = MilvusDataSourceConfig(
-        name="milvus-test",
-        description="Milvus测试数据源",
-        uri=settings.MILVUS_URI,
-        collection_name=f"test_{settings.MILVUS_COLLECTION}",
-        dimension=settings.MILVUS_DIMENSION
+        name="test_datasource",
+        description="测试Milvus数据源",
+        uri="http://localhost:19530",
+        collection_name="test_collection",
+        dimension=1536
     )
     
-    datasource = None
+    datasource = MilvusDataSource(config)
+    
+    # 连接
+    print("连接到Milvus数据源...")
+    await datasource.connect()
+    
+    # 创建测试节点
+    nodes = []
+    for i in range(5):
+        node = TextNode(
+            text=f"This is a test node {i}",
+            id_=f"node_{i}",
+            metadata={"doc_id": f"test_doc_{i}", "category": f"category_{i % 2}"},
+            embedding=generate_random_vector()
+        )
+        nodes.append(node)
+    
+    # 添加文档
+    print("添加文档节点...")
+    node_ids = await datasource.add_documents(nodes)
+    print(f"添加了 {len(node_ids)} 个节点")
+    
+    # 搜索文档
+    print("搜索文档...")
+    results = await datasource.search_documents(
+        query_vector=generate_random_vector(),
+        top_k=3
+    )
+    print(f"搜索结果: {len(results)} 条")
+    if results:
+        print(f"第一条结果: ID={results[0].node.metadata.get('doc_id')}, 文本={results[0].node.text[:30]}...")
+    
+    # 更新文档
+    if nodes:
+        doc_id = f"test_doc_0"
+        print(f"更新文档: {doc_id}")
+        new_node = TextNode(
+            text="This is an updated node content",
+            id_="updated_node",
+            metadata={"doc_id": doc_id, "updated": True},
+            embedding=generate_random_vector()
+        )
+        success = await datasource.update_document(doc_id, new_node)
+        print(f"更新结果: {'成功' if success else '失败'}")
+    
+    # 删除文档
+    if nodes:
+        doc_id = f"test_doc_1"
+        print(f"删除文档: {doc_id}")
+        success = await datasource.delete_document(doc_id)
+        print(f"删除结果: {'成功' if success else '失败'}")
+    
+    # 批量删除
+    doc_ids = [f"test_doc_{i}" for i in range(2, 5)]
+    print(f"批量删除文档: {doc_ids}")
+    results = await datasource.batch_delete_documents(doc_ids)
+    print(f"批量删除结果: {results}")
+    
+    # 清空集合
+    print("清空集合...")
+    success = await datasource.clear_collection()
+    print(f"清空结果: {'成功' if success else '失败'}")
+    
+    # 断开连接
+    await datasource.disconnect()
+    print("测试完成!")
+    return True
+
+# 主函数
+async def main():
+    print("开始测试Milvus向量数据库功能...")
+    
     try:
-        # 创建数据源并连接
-        datasource = MilvusDataSource(config)
-        logger.info("尝试连接到Milvus服务器...")
-        await datasource.connect()
-        logger.info("成功连接到Milvus服务器")
+        # 测试MilvusClient
+        client_result = test_milvus_client()
         
-        # 获取集合信息
-        info = await datasource.get_collection_stats()
-        logger.info(f"集合信息: {info}")
+        # 测试MilvusDataSource
+        datasource_result = await test_milvus_datasource()
         
-        # 清空集合（如果需要）
-        await datasource.clear_collection()
-        logger.info("已清空集合")
-        
-        # 添加测试文档
-        test_docs = create_test_documents(10)
-        logger.info(f"生成了 {len(test_docs)} 个测试文档")
-        
-        # 转换为TextNode
-        nodes = []
-        for doc in test_docs:
-            node = TextNode(
-                text=doc["text"],
-                id_=doc["chunk_id"],
-                embedding=doc["vector"],
-                metadata=doc["metadata"]
-            )
-            nodes.append(node)
-        
-        # 批量添加
-        node_ids = await datasource.batch_add_documents(nodes)
-        logger.info(f"成功添加 {len(node_ids)} 个文档")
-        
-        # 搜索测试
-        # 随机选择一个向量进行搜索
-        search_vector = random.choice(test_docs)["vector"]
-        search_results = await datasource.search_documents(
-            query_vector=search_vector,
-            top_k=5
-        )
-        logger.info(f"搜索返回 {len(search_results)} 个结果")
-        for i, result in enumerate(search_results):
-            # 修复：直接访问TextNode对象的属性
-            logger.info(f"结果 {i+1}: ID={result.id_}, 分数={getattr(result, 'score', 'N/A')}")
-            logger.info(f"  文本: {result.text[:50]}...")
-        
-        # 混合搜索测试
-        hybrid_results = await datasource.hybrid_search(
-            query_text="测试文档",
-            query_vector=search_vector,
-            top_k=5,
-            text_weight=0.3,
-            vector_weight=0.7
-        )
-        logger.info(f"混合搜索返回 {len(hybrid_results)} 个结果")
-        for i, result in enumerate(hybrid_results):
-            # 修复：直接访问TextNode对象的属性
-            logger.info(f"结果 {i+1}: ID={result.id_}, 分数={getattr(result, 'score', 'N/A')}")
-            logger.info(f"  文本: {result.text[:50]}...")
-        
-        # 删除一个文档
-        doc_to_delete = test_docs[0]["doc_id"]
-        delete_result = await datasource.delete_document(doc_to_delete)
-        logger.info(f"删除文档 {doc_to_delete}: {'成功' if delete_result else '失败'}")
-        
-        # 批量删除
-        docs_to_delete = [doc["doc_id"] for doc in test_docs[1:3]]
-        batch_delete_results = await datasource.batch_delete_documents(docs_to_delete)
-        logger.info(f"批量删除结果: {batch_delete_results}")
-        
-        # 更新文档
-        doc_to_update = test_docs[3]["doc_id"]
-        update_node = TextNode(
-            text="这是更新后的文档内容",
-            id_=test_docs[3]["chunk_id"],
-            embedding=generate_random_vector(settings.MILVUS_DIMENSION),
-            metadata={"doc_id": doc_to_update, "updated": True}
-        )
-        update_result = await datasource.update_document(doc_to_update, update_node)
-        logger.info(f"更新文档 {doc_to_update}: {'成功' if update_result else '失败'}")
-        
-        # 运行健康检查
-        health_status = await datasource.health_check()
-        logger.info(f"健康检查: {'正常' if health_status else '异常'}")
-        
-        logger.info("功能测试完成")
-    except ValueError as e:
-        # 处理初始化或连接错误
-        if "初始化Milvus数据源失败" in str(e) or "连接Milvus数据源失败" in str(e):
-            logger.error("无法连接到Milvus服务器。请确保Milvus服务正在运行，并检查连接配置。")
-            logger.error(f"错误详情: {str(e)}")
-            logger.info("要运行Milvus服务，可以使用Docker:")
-            logger.info("docker run -d --name milvus -p 19530:19530 -p 9091:9091 milvusdb/milvus:v2.3.2")
+        if client_result and datasource_result:
+            print("\n所有测试通过!")
         else:
-            logger.error(f"测试过程中发生值错误: {str(e)}")
+            print("\n部分测试失败!")
+            
     except Exception as e:
-        logger.error(f"测试过程中发生错误: {str(e)}")
-    finally:
-        # 断开连接
-        if datasource:
-            try:
-                await datasource.disconnect()
-                logger.info("已断开Milvus连接")
-            except Exception as e:
-                logger.error(f"断开连接时发生错误: {str(e)}")
+        print(f"测试过程中发生错误: {str(e)}")
 
 if __name__ == "__main__":
-    asyncio.run(run_test()) 
+    asyncio.run(main()) 

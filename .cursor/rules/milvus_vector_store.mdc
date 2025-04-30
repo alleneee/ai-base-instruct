@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: Milvus向量存储指南
+globs: 
 alwaysApply: false
 ---
 # Milvus向量存储指南

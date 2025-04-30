@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description:  API架构指南
+globs: 
 alwaysApply: false
 ---
 # API架构指南

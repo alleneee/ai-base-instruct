@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: 用户认证与授权指南
+globs: 
 alwaysApply: false
 ---
 # 用户认证与授权指南
