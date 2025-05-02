@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 import json
 import os
 
-from enterprise_kb.tasks.document_tasks import (
+from enterprise_kb.tasks.document_tasks_v2 import (
     process_document_task, 
     batch_process_documents_task,
     cleanup_task
@@ -82,12 +82,16 @@ async def process_document_with_celery(
         
         # 确保文件名存在于元数据中
         parsed_metadata["original_filename"] = file.filename
+        
+        # 设置分块类型 - 如果需要转换为Markdown，则使用递归分割
+        chunking_type = "recursive_markdown" if convert_to_markdown else None
             
         # 提交Celery任务
         task = process_document_task.delay(
             file_path=file_path,
             metadata=parsed_metadata,
-            convert_to_md=convert_to_markdown
+            use_semantic_chunking=True,
+            chunking_type=chunking_type
         )
         
         return TaskResponse(
@@ -145,13 +149,16 @@ async def batch_process_with_celery(
         # 添加批次信息到元数据
         shared_metadata["batch_size"] = len(files)
         shared_metadata["file_names"] = file_names
+        
+        # 设置分块类型 - 如果需要转换为Markdown，则使用递归分割
+        chunking_type = "recursive_markdown" if convert_to_markdown else None
                 
         # 提交批处理任务
         task = batch_process_documents_task.delay(
             file_paths=file_paths,
             shared_metadata=shared_metadata,
-            auto_process=auto_process,
-            convert_to_md=convert_to_markdown
+            use_semantic_chunking=auto_process,
+            chunking_type=chunking_type
         )
         
         return BatchTaskResponse(

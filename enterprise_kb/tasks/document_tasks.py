@@ -1,8 +1,29 @@
-"""文档处理任务模块"""
+"""文档处理任务模块 - 已弃用，请使用document_tasks_v2.py
+
+警告: 此模块已被弃用，将在未来版本中移除。
+请使用 enterprise_kb.tasks.document_tasks_v2 中的对应函数代替。
+
+弃用计划:
+1. 当前状态: 弃用警告
+2. 下一版本: 将发出运行时警告
+3. 未来版本: 将完全移除
+
+迁移指南:
+- process_document_task → document_tasks_v2.process_document_task
+- batch_process_documents_task → document_tasks_v2.batch_process_documents_task
+- cleanup_task → document_tasks_v2.cleanup_task
+"""
 import logging
 import json
 import os
+import warnings
 from typing import Dict, Any, Optional, List, Union
+
+warnings.warn(
+    "enterprise_kb.tasks.document_tasks 模块已弃用，请使用 enterprise_kb.tasks.document_tasks_v2",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from enterprise_kb.core.unified_celery import celery_app
 from enterprise_kb.storage.document_processor import get_document_processor

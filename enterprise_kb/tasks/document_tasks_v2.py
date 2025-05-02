@@ -275,6 +275,22 @@ def process_large_document_task(
         for doc in documents:
             doc.metadata.update(metadata)
         
+        # 确定分块类型
+        # 如果是Markdown文件并且配置了自动使用递归分割器，则切换到recursive_markdown
+        file_extension = os.path.splitext(file_path)[1].lower()
+        original_filename = metadata.get("original_filename", "")
+        original_extension = os.path.splitext(original_filename)[1].lower()
+        
+        # 检查是否是Markdown文件
+        is_markdown = (file_extension in [".md", ".markdown"] or 
+                      original_extension in [".md", ".markdown"] or
+                      metadata.get("file_type", "") in [".md", ".markdown"])
+        
+        # 如果是Markdown并且设置了自动使用递归分割器
+        if is_markdown and settings.MARKDOWN_USE_RECURSIVE_SPLITTER:
+            logger.info(f"检测到Markdown文件，使用递归分割器替代 {chunking_type}")
+            chunking_type = "recursive_markdown"
+        
         # 创建分块器
         chunker = create_chunker(
             chunking_type=chunking_type or "hierarchical",

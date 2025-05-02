@@ -165,8 +165,10 @@ class Settings(BaseSettings):
 
     # 语义分块配置
     SEMANTIC_CHUNKING_ENABLED: bool = Field(default=True)
-    SEMANTIC_CHUNKING_TYPE: str = Field(default="hierarchical")  # semantic, hierarchical
+    SEMANTIC_CHUNKING_TYPE: str = Field(default="hierarchical")  # semantic, hierarchical, recursive_markdown
     SEMANTIC_RESPECT_MARKDOWN: bool = Field(default=True)
+    # 是否对Markdown文件使用递归分割
+    MARKDOWN_USE_RECURSIVE_SPLITTER: bool = Field(default=True)  # 当处理Markdown文件时，是否自动使用递归分割器
 
     # 增量更新配置
     INCREMENTAL_PROCESSING_ENABLED: bool = Field(default=True)

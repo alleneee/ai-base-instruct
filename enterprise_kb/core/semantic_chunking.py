@@ -5,10 +5,13 @@ from typing import Dict, List, Optional, Any, Tuple, Union, Callable
 import nltk
 from nltk.tokenize import sent_tokenize
 import numpy as np
-
+import regex as re
 from llama_index.core import Document
 from llama_index.core.schema import BaseNode, TextNode
 from llama_index.core.node_parser import NodeParser, SentenceSplitter
+from llama_index.core.node_parser.text_splitter import RecursiveCharacterTextSplitter
+from llama_index.core.callbacks import CallbackManager
+from llama_index.core.utils import get_tqdm_iterable
 
 from enterprise_kb.core.config.settings import settings
 
@@ -682,6 +685,35 @@ def create_chunker(chunking_type: str, **kwargs) -> NodeParser:
         return SemanticChunker(**kwargs)
     elif chunking_type == "hierarchical":
         return HierarchicalChunker(**kwargs)
+    elif chunking_type == "recursive_markdown":
+        # 为 Markdown 配置 RecursiveCharacterTextSplitter
+        # 优先使用 Markdown 结构分隔符，然后是通用分隔符
+        # You might need to adjust chunk_size and chunk_overlap based on your needs
+        markdown_separators = [
+            "\n\n---\n\n",  # Horizontal rules
+            "\n\n***\n\n",
+            "\n\n___\n\n",
+            "\n## ",  # H2
+            "\n### ", # H3
+            "\n#### ",# H4
+            "\n##### ",# H5
+            "\n###### ",# H6
+            "\n\n",  # Paragraphs
+            "\n",    # Lines
+            " ",     # Spaces
+            ""       # Characters
+        ]
+        # Ensure default chunk_size and chunk_overlap if not provided
+        kwargs.setdefault("chunk_size", 1024)
+        kwargs.setdefault("chunk_overlap", 200) # Increased overlap might be good for recursive
+        
+        return RecursiveCharacterTextSplitter(
+            separators=markdown_separators,
+            **kwargs
+        )
     else:
         # 默认使用句子分割器
+        # Ensure default chunk_size and chunk_overlap if not provided
+        kwargs.setdefault("chunk_size", 1024)
+        kwargs.setdefault("chunk_overlap", 20)
         return SentenceSplitter(**kwargs)

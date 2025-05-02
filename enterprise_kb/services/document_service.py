@@ -12,7 +12,7 @@ from enterprise_kb.models.schemas import (
 )
 from enterprise_kb.core.document_processor import get_document_processor
 from enterprise_kb.db.repositories.document_repository import DocumentRepository
-from enterprise_kb.tasks.document_tasks import process_document_task
+from enterprise_kb.tasks.document_tasks_v2 import process_document_task
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,6 @@ class DocumentService:
             
             # 启动异步处理任务
             process_document_task.delay(
-                doc_id=doc_id,
                 file_path=file_path,
                 metadata={
                     "doc_id": doc_id,
@@ -154,7 +153,7 @@ class DocumentService:
                     **(document["metadata"] or {})
                 },
                 datasource_name=datasource,
-                custom_processors=custom_processors
+                chunking_type="recursive_markdown" if file_type in ["md", "markdown"] else None
             )
             
             # 返回文档响应

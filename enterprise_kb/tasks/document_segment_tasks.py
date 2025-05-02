@@ -35,7 +35,7 @@ def split_document_task(
     max_segments: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    将文档分割成多个段落的任务
+    分割文档任务
     
     Args:
         file_path: 文件路径
@@ -46,7 +46,7 @@ def split_document_task(
         max_segments: 最大段落数，如果为None则不限制
         
     Returns:
-        分割结果，包含段落列表和元数据
+        分割结果
     """
     logger.info(f"开始分割文档: {file_path}")
     
@@ -54,23 +54,49 @@ def split_document_task(
     self.update_state(state="PROCESSING", meta={
         "file_path": file_path,
         "progress": 0,
-        "stage": "splitting"
+        "stage": "loading"
     })
     
     try:
         # 获取文档处理器
         document_processor = get_document_processor()
         
-        # 加载文档
+        # 尝试加载文档
         reader = document_processor.get_reader_for_file(file_path)
         documents = reader.load(file_path)
         
         if not documents:
             raise ValueError(f"无法加载文档: {file_path}")
+            
+        logger.info(f"已加载文档: {file_path}, 共 {len(documents)} 个分区")
+        
+        # 更新任务状态
+        self.update_state(state="PROCESSING", meta={
+            "file_path": file_path,
+            "progress": 30,
+            "stage": "loaded",
+            "document_count": len(documents)
+        })
         
         # 添加元数据到文档
         for doc in documents:
             doc.metadata.update(metadata)
+        
+        # 确定分块类型
+        # 如果是Markdown文件并且配置了自动使用递归分割器，则切换到recursive_markdown
+        file_extension = os.path.splitext(file_path)[1].lower()
+        original_filename = metadata.get("original_filename", "")
+        original_extension = os.path.splitext(original_filename)[1].lower()
+        
+        # 检查是否是Markdown文件
+        is_markdown = (file_extension in [".md", ".markdown"] or 
+                      original_extension in [".md", ".markdown"] or
+                      metadata.get("file_type", "") in [".md", ".markdown"])
+        
+        # 如果是Markdown并且设置了自动使用递归分割器
+        if is_markdown and settings.MARKDOWN_USE_RECURSIVE_SPLITTER:
+            logger.info(f"检测到Markdown文件，使用递归分割器替代 {chunking_type}")
+            chunking_type = "recursive_markdown"
         
         # 创建分块器
         chunker = create_chunker(
